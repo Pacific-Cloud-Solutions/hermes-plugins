@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/hero.png" alt="Hermes Plugins by Pacific Cloud Solutions" width="100%">
+  <img src="docs/hero.webp" alt="Hermes Plugins by Pacific Cloud Solutions" width="100%">
 </p>
 
 # Hermes Plugins
@@ -40,8 +40,8 @@ The calculator in `hermes_dev` is a local test fixture and deliberately does not
 ```
 hermes-plugins/
 ├── plugins/<id>/          One plugin per directory — plugin.yaml, __init__.py, desc, health
-├── scripts/               catalog_entry.py (generates the upstream catalog entry), PR helper
-├── docs/hero.png          README hero banner
+├── scripts/               catalog entry generator, catalog PR helper, hero asset builder
+├── docs/                  hero.png (lossless master), hero.webp (README), hero-2x1.webp (catalog card)
 ├── hermes-pack.yaml       Pack pins, one `ref:` per plugin — exact SHAs only
 ├── AGENTS.md              Repo rules for contributors and agents
 └── README.md
@@ -72,11 +72,16 @@ workflow:
 
 ```bash
 python3 scripts/catalog_entry.py --plugin plugins/<id> --sha <40-char-sha> \
-    --category tools --maintainer Pacific-Cloud-Solutions > /tmp/<id>.yaml
+    --category tools --maintainer Pacific-Cloud-Solutions \
+    --image https://raw.githubusercontent.com/Pacific-Cloud-Solutions/hermes-plugins/<40-char-sha>/docs/hero-2x1.webp \
+    > /tmp/<id>.yaml
 
 scripts/open_catalog_pr.sh /tmp/<id>.yaml <name>     # dry run — prints every step
 scripts/open_catalog_pr.sh /tmp/<id>.yaml <name> --open-pr   # fork, push, open the PR
 ```
+
+`--image` must be an https URL on a GitHub host, pinned to the entry's commit — `docs/hero-2x1.webp`
+is the 2:1 asset the catalog card expects.
 
 The PR is opened against [`NousResearch/hermes-agent`](https://github.com/NousResearch/hermes-agent)
 and needs a human maintainer to merge it. Admission rules (SHA pins, no self-updating code, declared

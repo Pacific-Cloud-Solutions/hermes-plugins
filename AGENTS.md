@@ -108,6 +108,24 @@ Balanced quotes happen to survive, which makes this a silent trap.
   markdown backticks in an unquoted body are command substitution.
 - Verify every script with `bash -n <script>` before committing, and run it once for real.
 
+## Assets
+
+`docs/` holds three files and they are not interchangeable:
+
+| File | What it is | Where it is used |
+|---|---|---|
+| `docs/hero.png` | **lossless master**, 1672×941 (16:9) | nothing renders it — it is the source for re-crops |
+| `docs/hero.webp` | the master's own aspect, WebP q92 (131 KB) | the README hero |
+| `docs/hero-2x1.webp` | 2:1, 1600×800 (111 KB) | the catalog entry's `image:` field |
+
+Regenerate the two WebP files with `python3 scripts/build_hero_assets.py` — never hand-edit them,
+and never commit a hand-cropped replacement. The 2:1 is synthesised (the master is full-bleed:
+artwork reaches column 55, row 3, and a bottom crop to 836 would delete the subtitle), so the
+script carries the reasoning and the numbers.
+
+The master stays lossless on purpose: the README's hero is 10× smaller as WebP than as an
+optimised PNG with a lower worst-case error, but a lossy file cannot be the source for a re-crop.
+
 ## Versioning
 
 `plugin.yaml`'s `version` is the human label; the SHA is the release. Bump the version and the SHA
