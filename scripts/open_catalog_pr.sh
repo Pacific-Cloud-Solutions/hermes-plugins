@@ -80,24 +80,32 @@ echo
 sed 's/^/    | /' "$ENTRY"
 
 TITLE="plugin-catalog: add $NAME"
-BODY=$(cat <<EOF
-Adds a catalog entry for **$NAME** — \`plugin-catalog/$NAME.yaml\`, pinned to \`${SHA:0:12}\`.
+# Quoted heredoc + explicit substitution. Two reasons it is not `BODY=$(cat <<'EOF' ...)`:
+# markdown backticks in the body would otherwise be command substitution, and macOS's bash 3.2
+# mis-parses quote characters inside a heredoc nested in $( ) (an apostrophe in the body aborts
+# the whole script). `read -d ''` takes the heredoc outside any command substitution.
+read -r -d '' BODY <<'BODYEOF' || true
+Adds a catalog entry for **__NAME__** — `plugin-catalog/__NAME__.yaml`, pinned to `__SHORT__`.
 
-- **Repo:** \`$PLUGIN_REPO\`
-- **Pinned commit:** \`$SHA\`
+- **Repo:** `__PLUGIN_REPO__`
+- **Pinned commit:** `__SHA__`
 - **Submitted by the plugin repository's owner** (rule 5 — owner-or-major-contributor
   submissions), not a drive-by.
 
-Validation, run against the pinned commit with \`hermes plugins validate\`:
+Validation, run against the pinned commit with `hermes plugins validate`:
 
-\`\`\`
+```
 <paste the real output here>
-\`\`\`
+```
 
-The declared capabilities in the entry match what \`register()\` registers at that commit, and
+The declared capabilities in the entry match what `register()` registers at that commit, and
 the plugin ships no self-updating code — the SHA pin is the release (rule 3).
-EOF
-)
+BODYEOF
+BODY=$(printf '%s\n' "$BODY" \
+  | sed -e "s|__NAME__|$NAME|g" \
+        -e "s|__SHORT__|${SHA:0:12}|g" \
+        -e "s|__PLUGIN_REPO__|$PLUGIN_REPO|g" \
+        -e "s|__SHA__|$SHA|g")
 
 step "4/6 pull request"
 work "title: $TITLE"

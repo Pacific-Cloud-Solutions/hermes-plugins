@@ -95,6 +95,19 @@ installs resolve to identical code.
 **Never push to `NousResearch/hermes-agent` and never open an upstream PR without explicit
 sign-off.** Develop, validate, and stage locally; the `--open-pr` step is a human decision.
 
+## Scripts must run on macOS bash 3.2
+
+Apple ships **GNU bash 3.2.57** as `/bin/bash`, and it mis-parses a heredoc nested inside a
+command substitution: a quote character in the body (e.g. an apostrophe in "the plugin
+repository's owner") aborts the whole script with `unexpected EOF while looking for matching '`.
+Balanced quotes happen to survive, which makes this a silent trap.
+
+- Do not write `VAR=$(cat <<'EOF' … EOF)`. Use `read -r -d '' VAR <<'EOF' || true`, which keeps the
+  heredoc outside any command substitution, or redirect the heredoc to a temp file.
+- Keep the body a **quoted** heredoc and substitute explicitly (`sed -e "s|__NAME__|$NAME|g"`) —
+  markdown backticks in an unquoted body are command substitution.
+- Verify every script with `bash -n <script>` before committing, and run it once for real.
+
 ## Versioning
 
 `plugin.yaml`'s `version` is the human label; the SHA is the release. Bump the version and the SHA
