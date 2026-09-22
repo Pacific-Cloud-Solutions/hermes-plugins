@@ -1,4 +1,8 @@
-# Hermes Plugins — Pacific Cloud Solutions
+<p align="center">
+  <img src="docs/hero.png" alt="Hermes Plugins by Pacific Cloud Solutions" width="100%">
+</p>
+
+# Hermes Plugins
 
 Installable [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugins, one job each,
 pinned to exact commit SHAs so an install is reproducible and reviewable.
@@ -37,6 +41,7 @@ The calculator in `hermes_dev` is a local test fixture and deliberately does not
 hermes-plugins/
 ├── plugins/<id>/          One plugin per directory — plugin.yaml, __init__.py, desc, health
 ├── scripts/               catalog_entry.py (generates the upstream catalog entry), PR helper
+├── docs/hero.png          README hero banner
 ├── hermes-pack.yaml       Pack pins, one `ref:` per plugin — exact SHAs only
 ├── AGENTS.md              Repo rules for contributors and agents
 └── README.md
