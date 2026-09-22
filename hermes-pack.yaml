@@ -1,0 +1,13 @@
+name: pacific-cloud-solutions-hermes-plugins
+description: Hermes Agent plugins from Pacific Cloud Solutions — one job each, pinned to exact commit SHAs for reproducible installs.
+version: 0.1.0
+author: Pacific Cloud Solutions
+plugins: []
+# Each entry is `repo:` + `subdir:` + `ref:` (a full 40-character commit SHA — branches and
+# short SHAs are rejected). Add one per published plugin, and repin it in the same commit that
+# changes the plugin:
+#
+# plugins:
+#   - repo: Pacific-Cloud-Solutions/hermes-plugins
+#     subdir: plugins/<id>
+#     ref: <40-char-sha>

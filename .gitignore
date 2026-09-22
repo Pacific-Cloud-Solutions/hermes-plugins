@@ -1,0 +1,26 @@
+# Secrets and local state never ship.
+.env
+.env.*
+*.pem
+*.key
+
+# A plugin's own runtime state / config seeds that hold live values.
+# Ship `config.json.example` instead — dummy values only.
+plugins/*/config.json
+plugins/*/library.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Scratch clone used by scripts/open_catalog_pr.sh — never committed.
+.catalog-work/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
