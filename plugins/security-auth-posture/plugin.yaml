@@ -11,9 +11,30 @@ tags:
   - hardening
   - readonly
 
-# security-core is imported at register() time. If it is missing, loading this
-# plugin FAILS LOUDLY rather than running a security tool without the taint
-# model — see bootstrap.py and README.md.
+# Declared read-only audit intent.
+#
+# This plugin NAMES the artifacts it audits and never acts on them: each path below
+# is read, reported and cited, and no finding is ever written back. Declaring them
+# lets the install scanner tell a reference from an attack — it can only LOWER a
+# finding's severity, only for these targets, never when the file mutates the
+# target, and never on a line that acts on it.
+audit:
+  readonly: true
+  targets:
+    - authorized_keys
+    - "/etc/passwd"
+    - "/etc/shadow"
+    - NOPASSWD
+    - sshd_config
+    - sudoers
+    - sudo
+    - ".ssh/"
+
+# security-core is imported lazily, on first tool use. Without it the tool still
+# REGISTERS but REFUSES TO RUN — no report is ever produced outside the taint
+# model. It is deliberately not imported at module scope, because `hermes plugins
+# doctor` and `hermes plugins validate` run a plugin in ISOLATION, where no
+# sibling directory exists. See bootstrap.py and README.md.
 requires_plugins:
   - id: security-core
     version_range: ">=0.1.0"
