@@ -1,0 +1,22 @@
+name: security-core
+version: 0.1.0
+description: Shared contract, provenance/taint model and redaction for the Pacific Cloud Solutions security suite
+author: Pacific Cloud Solutions
+license: MIT
+manifest_version: 2
+api_version: 1
+homepage: https://github.com/Pacific-Cloud-Solutions/hermes-plugins
+tags:
+  - security
+  - foundation
+
+# security-core is a FOUNDATION plugin: it ships the contract the rest of the
+# suite imports and enforces. It deliberately registers no tools and no hooks —
+# a base that also did work would be a base every dependent had to reason about.
+#
+# What it registers (neither field exists in the manifest schema, so nothing is
+# declared here and `validate` reports no drift):
+#   - redaction patterns (agent.redact, additive)
+#   - one bounded system-prompt section stating the hostile-input rule
+provides_tools: []
+provides_hooks: []
