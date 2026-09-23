@@ -1,0 +1,23 @@
+name: security-auth-posture
+version: 0.1.0
+description: Read-only audit of local authentication posture — SSH config, sudoers, authorized keys, UID 0 accounts
+author: Pacific Cloud Solutions
+license: MIT
+manifest_version: 2
+api_version: 1
+homepage: https://github.com/Pacific-Cloud-Solutions/hermes-plugins
+tags:
+  - security
+  - hardening
+  - readonly
+
+# security-core is imported at register() time. If it is missing, loading this
+# plugin FAILS LOUDLY rather than running a security tool without the taint
+# model — see bootstrap.py and README.md.
+requires_plugins:
+  - id: security-core
+    version_range: ">=0.1.0"
+
+provides_tools:
+  - auth_posture
+provides_hooks: []
