@@ -1,5 +1,5 @@
-name: pacific-cloud-solutions-hermes-plugins
-description: Hermes Agent plugins from Pacific Cloud Solutions — one job each, pinned to exact commit SHAs for reproducible installs.
+name: pcs-security-guard
+description: The PCS security suite for Hermes Agent — read-only, local, advisory host auditing, one job per plugin, pinned to exact commit SHAs.
 version: 0.1.0
 author: Pacific Cloud Solutions
 plugins: []

@@ -1,4 +1,4 @@
-"""security-auth-posture — read-only local authentication posture audit.
+"""pcs-security-auth-posture — read-only local authentication posture audit.
 
 Tool surface: exactly one tool, `auth_posture`. It reads a fixed list of
 well-known authentication files and returns a structured `Report`.
@@ -26,6 +26,6 @@ def register(ctx) -> None:  # noqa: ANN001 — PluginContext, typed by the SDK
 
     Deliberately lets `bootstrap.load()` raise. A security tool that runs without
     the taint model is the exact failure this suite exists to prevent, so a
-    missing security-core must fail the load, not degrade quietly.
+    missing pcs-security-core must fail the load, not degrade quietly.
     """
     register_all(ctx)

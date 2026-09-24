@@ -141,13 +141,13 @@ def redact(text: str) -> tuple[str, bool]:
         from agent.redact import redact_sensitive_text  # type: ignore
     except Exception as exc:
         logger.warning(
-            "security-core: secret redaction unavailable (%s) — evidence will be "
+            "pcs-security-core: secret redaction unavailable (%s) — evidence will be "
             "stored UNMASKED. This is a degradation, not a normal state.", exc)
         return text, False
     try:
         cleaned = redact_sensitive_text(text)
     except Exception as exc:
-        logger.warning("security-core: redaction of one value failed (%s); storing unmasked", exc)
+        logger.warning("pcs-security-core: redaction of one value failed (%s); storing unmasked", exc)
         return text, False
     return (cleaned, cleaned != text)
 

@@ -1,9 +1,9 @@
-# security-auth-posture
+# pcs-security-auth-posture
 
 Read-only audit of local authentication posture. One tool: `auth_posture`.
 
 Part of the Pacific Cloud Solutions security suite. Requires
-[`security-core`](../security-core), which supplies the finding contract and the
+[`pcs-security-core`](../pcs-security-core), which supplies the finding contract and the
 provenance/taint model.
 
 ## What it checks
@@ -27,17 +27,17 @@ provenance/taint model.
 ## Install
 
 ```bash
-hermes plugins install security-core
-hermes plugins install security-auth-posture
+hermes plugins install pcs-security-core
+hermes plugins install pcs-security-auth-posture
 ```
 
-If `security-core` is missing the tool still **registers** — but **refuses to
+If `pcs-security-core` is missing the tool still **registers** — but **refuses to
 run**, returning an explicit error instead of a report. No report is ever
 produced outside the taint model.
 
 Registration is deliberately tolerant for a specific reason: `hermes plugins
 doctor` and `hermes plugins validate` copy a plugin into a temp directory and run
-it **in isolation**, with no sibling `security-core/` on disk. A hard import at
+it **in isolation**, with no sibling `pcs-security-core/` on disk. A hard import at
 module scope makes both gates fail. The property that matters is "no *report*
 without the contract", which the handler enforces — not "the module cannot be
 imported".
@@ -91,8 +91,8 @@ nothing about a file's trustworthiness from its path.
 ## Verify
 
 ```bash
-hermes plugins doctor   plugins/security-auth-posture
-hermes plugins validate plugins/security-auth-posture
+hermes plugins doctor   plugins/pcs-security-auth-posture
+hermes plugins validate plugins/pcs-security-auth-posture
 ```
 
 ## Licensing

@@ -1,4 +1,4 @@
-name: security-core
+name: pcs-security-core
 version: 0.1.0
 description: Shared contract, provenance/taint model and redaction for the Pacific Cloud Solutions security suite
 author: Pacific Cloud Solutions
@@ -10,7 +10,7 @@ tags:
   - security
   - foundation
 
-# security-core is a FOUNDATION plugin: it ships the contract the rest of the
+# pcs-security-core is a FOUNDATION plugin: it ships the contract the rest of the
 # suite imports and enforces. It deliberately registers no tools and no hooks —
 # a base that also did work would be a base every dependent had to reason about.
 #

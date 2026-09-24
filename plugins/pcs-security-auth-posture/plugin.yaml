@@ -1,4 +1,4 @@
-name: security-auth-posture
+name: pcs-security-auth-posture
 version: 0.1.0
 description: Read-only audit of local authentication posture — SSH config, sudoers, authorized keys, UID 0 accounts
 author: Pacific Cloud Solutions
@@ -30,13 +30,13 @@ audit:
     - sudo
     - ".ssh/"
 
-# security-core is imported lazily, on first tool use. Without it the tool still
+# pcs-security-core is imported lazily, on first tool use. Without it the tool still
 # REGISTERS but REFUSES TO RUN — no report is ever produced outside the taint
 # model. It is deliberately not imported at module scope, because `hermes plugins
 # doctor` and `hermes plugins validate` run a plugin in ISOLATION, where no
 # sibling directory exists. See bootstrap.py and README.md.
 requires_plugins:
-  - id: security-core
+  - id: pcs-security-core
     version_range: ">=0.1.0"
 
 provides_tools:

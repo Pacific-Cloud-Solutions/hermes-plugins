@@ -27,7 +27,7 @@ from .bootstrap import load
 # Bound by core() on first use — deliberately left None at import time.
 #
 # `hermes plugins doctor` and `hermes plugins validate` copy the plugin into a
-# temp directory and run it in ISOLATION, so a sibling `security-core/` is not on
+# temp directory and run it in ISOLATION, so a sibling `pcs-security-core/` is not on
 # disk there; a module-level `load()` makes both gates fail. The property that
 # matters is "no REPORT is produced without the taint model", which the handler
 # enforces — not "the module cannot be imported".
@@ -46,9 +46,9 @@ _core_cache: list = []
 
 
 def core():
-    """Load security-core, bind its symbols into this module, and return it.
+    """Load pcs-security-core, bind its symbols into this module, and return it.
 
-    Cached after the first success. Raises if security-core cannot be found.
+    Cached after the first success. Raises if pcs-security-core cannot be found.
     """
     global Confidence, Evidence, Finding, Provenance, Reachability, Severity, quarantine
     if _core_cache:

@@ -206,7 +206,7 @@ def _now() -> str:
 def merge(reports: Sequence[Report]) -> Report:
     """Fold several tools' reports into one, preserving every coverage caveat."""
     if not reports:
-        return Report(tool="security-core", target="(none)")
+        return Report(tool="pcs-security-core", target="(none)")
     findings: list[Finding] = []
     seen: set[str] = set()
     checks: list[str] = []

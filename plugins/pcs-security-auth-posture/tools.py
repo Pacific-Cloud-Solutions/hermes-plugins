@@ -18,7 +18,7 @@ def auth_posture(args, **kwargs) -> str:
 
     `**kwargs` is mandatory: additive payload fields must never break this handler.
 
-    `checks.core()` raises when security-core is absent, and that lands in the
+    `checks.core()` raises when pcs-security-core is absent, and that lands in the
     except below — so an unconfigured install gets an explicit error, never a
     report produced outside the taint model.
     """
@@ -30,7 +30,7 @@ def auth_posture(args, **kwargs) -> str:
 
         audit = run_all(root, include_info)
         report = core.Report(
-            tool="security-auth-posture",
+            tool="pcs-security-auth-posture",
             target=str(audit.root),
             findings=tuple(audit.findings),
             coverage=core.Coverage(
@@ -53,17 +53,17 @@ def auth_posture(args, **kwargs) -> str:
 def register_all(ctx) -> None:  # noqa: ANN001 — PluginContext
     """Register the tool.
 
-    Probes security-core and WARNS — but still registers — when it is missing.
+    Probes pcs-security-core and WARNS — but still registers — when it is missing.
     Registering anyway is what lets `hermes plugins doctor` and
     `hermes plugins validate` pass, since both run the plugin in isolation with no
-    sibling security-core on disk. The safety property lives in the handler, which
+    sibling pcs-security-core on disk. The safety property lives in the handler, which
     refuses to produce a report without the contract.
     """
     try:
         checks.core()
     except Exception as exc:
         logger.warning(
-            "security-auth-posture: security-core is unavailable (%s). %s will register "
+            "pcs-security-auth-posture: pcs-security-core is unavailable (%s). %s will register "
             "but refuse to run until it is installed — no report is produced without the "
             "taint model.", exc, TOOL_NAME,
         )

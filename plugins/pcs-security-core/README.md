@@ -1,4 +1,4 @@
-# security-core
+# pcs-security-core
 
 Shared contract, provenance/taint model and redaction for the Pacific Cloud
 Solutions security suite.
@@ -59,7 +59,7 @@ a skipped check is `INCONCLUSIVE`, not clean.
 ```yaml
 # plugin.yaml
 requires_plugins:
-  - id: security-core
+  - id: pcs-security-core
     version_range: ">=0.1.0"
 ```
 
@@ -71,7 +71,7 @@ core = load()
 Finding, quarantine, Provenance = core.Finding, core.quarantine, core.Provenance
 ```
 
-### Why a shim instead of `import hermes_plugins.security_core`
+### Why a shim instead of `import hermes_plugins.pcs_security_core`
 
 The loader imports a directory plugin as `hermes_plugins.<slug>`
 (`hermes_cli/plugins_loader.py::_load_directory_module`). Two reasons that name
@@ -79,14 +79,14 @@ is not safe to hardcode:
 
 1. **It is profile-scoped.** `_directory_module_name` gives the bare name to the
    first scope that claims it and every *other* scope
-   `hermes_plugins.security_core__home_<digest>` — a hash of a private scope key.
+   `hermes_plugins.pcs_security_core__home_<digest>` — a hash of a private scope key.
    Under multiplex, a dependent plugin in the second profile would import
    nothing.
 2. **It is an internal namespace.** `hermes_plugins` is an implementation detail,
    not a documented contract.
 
-So `bootstrap.py` resolves by **filesystem** — the sibling `security-core/`
-directory, then `$HERMES_HOME/plugins/security-core/` — and falls back to the
+So `bootstrap.py` resolves by **filesystem** — the sibling `pcs-security-core/`
+directory, then `$HERMES_HOME/plugins/pcs-security-core/` — and falls back to the
 loader namespace only as a shortcut. `requires_plugins` guarantees the load
 *order* (`resolve_plugin_load_order` is a topological sort), which is what makes
 the sibling available in the first place.
@@ -99,7 +99,7 @@ the taint model is the exact failure this suite exists to prevent.
 - **Redaction patterns** — additive to the built-ins, never weakening them.
   Includes AWS keys, GitHub/Slack/OpenAI tokens, JWTs, bearer headers, PEM
   private key headers.
-- **One bounded system-prompt section** (`security_core.hostile_input`) stating
+- **One bounded system-prompt section** (`pcs_security_core.hostile_input`) stating
   the rule to the agent. Frozen into each new session prompt, so the text is
   deliberately **stable** — editing it would invalidate the prompt cache for
   every session, and this suite of all things must not break the invariant it
@@ -114,8 +114,8 @@ Masking is a safety property; an inability to mask is a warning.
 ## Gates
 
 ```bash
-hermes plugins doctor   plugins/security-core    # exit 0
-hermes plugins validate plugins/security-core    # exit 0, security scan — safe
+hermes plugins doctor   plugins/pcs-security-core    # exit 0
+hermes plugins validate plugins/pcs-security-core    # exit 0, security scan — safe
 ```
 
 > **Admission-scanner traps (two, both lexical).** `validate` scans raw source:

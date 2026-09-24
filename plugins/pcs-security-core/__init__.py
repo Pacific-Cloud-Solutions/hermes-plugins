@@ -1,4 +1,4 @@
-"""security-core — shared contract, provenance model and redaction.
+"""pcs-security-core — shared contract, provenance model and redaction.
 
 This plugin is the *foundation* of the security suite. It registers no tools and
 no hooks: it registers the two things that must be global and identical for every
@@ -8,7 +8,7 @@ told about — and it exports the contract every dependent imports.
 A dependent plugin declares:
 
     requires_plugins:
-      - id: security-core
+      - id: pcs-security-core
         version_range: ">=0.1.0"
 
 and carries a verbatim copy of `bootstrap.py` to obtain this module regardless of
@@ -61,7 +61,7 @@ __all__ = [
 #: fails loudly rather than silently mis-reading a field.
 API_VERSION = 1
 
-PROMPT_SECTION_ID = "security_core.hostile_input"
+PROMPT_SECTION_ID = "pcs_security_core.hostile_input"
 
 #: Bounded by DEFAULT_SYSTEM_PROMPT_SECTION_MAX_CHARS in core; kept well under.
 #: Frozen into each new session prompt, so it must stay stable across turns —
@@ -110,12 +110,12 @@ def register(ctx) -> None:  # noqa: ANN001 — PluginContext, typed by the SDK
 
     try:
         accepted = ctx.register_redaction_patterns(redaction_patterns)
-        logger.debug("security-core: %d/%d redaction pattern(s) accepted",
+        logger.debug("pcs-security-core: %d/%d redaction pattern(s) accepted",
                      accepted, len(redaction_patterns))
     except Exception as exc:
-        logger.warning("security-core: redaction registration failed: %s", exc)
+        logger.warning("pcs-security-core: redaction registration failed: %s", exc)
 
     try:
         ctx.register_system_prompt_section(PROMPT_SECTION_ID, prompt_section())
     except Exception as exc:
-        logger.warning("security-core: prompt section registration failed: %s", exc)
+        logger.warning("pcs-security-core: prompt section registration failed: %s", exc)
