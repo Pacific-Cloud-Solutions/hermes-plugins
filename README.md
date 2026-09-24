@@ -23,8 +23,8 @@ hermes plugins browse
 The whole set is also installable as a **pack** — a single YAML pinning every plugin to a SHA:
 
 ```bash
-hermes plugins pack show  https://raw.githubusercontent.com/Pacific-Cloud-Solutions/hermes-plugins/main/hermes-pack.yaml
-hermes plugins pack install https://raw.githubusercontent.com/Pacific-Cloud-Solutions/hermes-plugins/main/hermes-pack.yaml
+hermes plugins pack show  https://raw.githubusercontent.com/Pacific-Cloud-Solutions/hermes-plugins/main/pcs-security-guard.yaml
+hermes plugins pack install https://raw.githubusercontent.com/Pacific-Cloud-Solutions/hermes-plugins/main/pcs-security-guard.yaml
 ```
 
 ## Plugins
@@ -49,7 +49,7 @@ hermes-plugins/
 ├── plugins/<id>/          One plugin per directory — plugin.yaml, __init__.py, desc, health
 ├── scripts/               catalog entry generator, catalog PR helper, hero asset builder
 ├── docs/                  hero.png (lossless master), hero.webp (README), hero-2x1.webp (catalog card)
-├── hermes-pack.yaml       Pack pins, one `ref:` per plugin — exact SHAs only
+├── pcs-security-guard.yaml  Pack pins, one `ref:` per plugin — exact SHAs only
 ├── AGENTS.md              Repo rules for contributors and agents
 └── README.md
 ```

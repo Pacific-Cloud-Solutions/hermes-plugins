@@ -161,4 +161,4 @@ PR_URL=$(gh api -X POST "repos/$UPSTREAM/pulls" \
 [ -n "$PR_URL" ] || { echo "error: the PR was not created (check the API response above)" >&2; exit 1; }
 printf '\n    %s\n' "$PR_URL"
 work "a maintainer merges it; presence in plugin-catalog/ is the install path"
-work "after a merge, re-pin hermes-pack.yaml to the same sha in this repo"
+work "after a merge, re-pin pcs-security-guard.yaml to the same sha in this repo"
