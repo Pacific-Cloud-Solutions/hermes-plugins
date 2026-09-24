@@ -32,9 +32,21 @@ hermes plugins pack install https://raw.githubusercontent.com/Pacific-Cloud-Solu
 | Plugin | Does | Category | Catalog |
 |---|---|---|---|
 | `pcs-security-core` | Shared contract — findings, evidence, coverage, the provenance/taint model, and secret redaction. A foundation plugin: no tools of its own. | tools | — |
-| `pcs-security-auth-posture` | Read-only audit of local authentication posture — `sshd_config` and its drop-ins, `sudoers`, `authorized_keys`, UID 0 accounts. | tools | — |
+| `pcs-security-auth-posture` | Read-only audit of local authentication posture — `sshd_config`, `sudoers`, key files, UID 0 accounts. **Blocked at install pending the declared-audit-intent signal upstream** (see below). | tools | — |
+| `pcs-security-tls-posture` | Read-only audit of certificate validity, key strength, and deprecated protocols or weak cipher suites in server configuration. | tools | — |
+| `pcs-security-log-triage` | Read-only triage of local logs — authentication failures correlated by source address, a success following a burst, crashes, and instruction-like content in log data. | tools | — |
+| `pcs-security-network-exposure` | Read-only audit of which services are reachable beyond loopback, prioritised by what the service is. | tools | — |
 
-Both ship in the `pcs-security-guard` pack. Neither has a catalog entry yet.
+All five ship in the `pcs-security-guard` pack. The last three install cleanly on a
+released Hermes and are the intended first catalog entries; **no plugin has a
+catalog entry yet.**
+
+`pcs-security-auth-posture` names the artifacts it audits (`authorized_keys`,
+`/etc/passwd`, `NOPASSWD`, `sudoers`), which the install scanner treats as hostile
+lexical patterns. It therefore declares read-only audit intent in its manifest, and
+**cannot be installed by any route until that signal lands upstream** — the catalog
+gate and the install scanner both reject it, and `--force` does not override a
+`dangerous` verdict. Do not publish it before the dependency lands.
 
 ## Layout
 

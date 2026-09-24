@@ -1,0 +1,32 @@
+name: pcs-security-tls-posture
+version: 0.1.0
+description: Read-only audit of local TLS posture — certificate validity, key strength, deprecated protocols and weak cipher suites
+author: Pacific Cloud Solutions
+license: MIT
+manifest_version: 2
+api_version: 1
+homepage: https://github.com/Pacific-Cloud-Solutions/hermes-plugins
+tags:
+  - security
+  - hardening
+  - readonly
+  - tls
+
+# No `audit:` declaration here, deliberately. This plugin never names an artifact
+# that the install scanner treats as hostile vocabulary — it reads certificates and
+# server TLS directives, and reports on them. It installs clean without needing the
+# declared-intent signal, which is why it is the first entry in the suite to go to
+# the catalog.
+
+# pcs-security-core is imported lazily, on first tool use. Without it the tool still
+# REGISTERS but REFUSES TO RUN — no report is ever produced outside the taint
+# model. It is deliberately not imported at module scope, because `hermes plugins
+# doctor` and `hermes plugins validate` run a plugin in ISOLATION, where no
+# sibling directory exists. See bootstrap.py and README.md.
+requires_plugins:
+  - id: pcs-security-core
+    version_range: ">=0.1.0"
+
+provides_tools:
+  - tls_posture
+provides_hooks: []
