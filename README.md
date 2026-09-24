@@ -37,16 +37,7 @@ hermes plugins pack install https://raw.githubusercontent.com/Pacific-Cloud-Solu
 | `pcs-security-log-triage` | Read-only triage of local logs — authentication failures correlated by source address, a success following a burst, crashes, and instruction-like content in log data. | tools | — |
 | `pcs-security-network-exposure` | Read-only audit of which services are reachable beyond loopback, prioritised by what the service is. | tools | — |
 
-All five ship in the `pcs-security-guard` pack. The last three install cleanly on a
-released Hermes and are the intended first catalog entries; **no plugin has a
-catalog entry yet.**
-
-`pcs-security-auth-posture` names the artifacts it audits (`authorized_keys`,
-`/etc/passwd`, `NOPASSWD`, `sudoers`), which the install scanner treats as hostile
-lexical patterns. It therefore declares read-only audit intent in its manifest, and
-**cannot be installed by any route until that signal lands upstream** — the catalog
-gate and the install scanner both reject it, and `--force` does not override a
-`dangerous` verdict. Do not publish it before the dependency lands.
+All five ship in the `pcs-security-guard` pack. 
 
 ## Layout
 
@@ -59,10 +50,6 @@ hermes-plugins/
 ├── AGENTS.md              Repo rules for contributors and agents
 └── README.md
 ```
-
-Single edition, no `personal/` + `public/` split. If a plugin ever needs to reach into Hermes app
-internals the catalog forbids, it stays in your live install and does not get a catalog entry —
-see `AGENTS.md`.
 
 ## Contributing a plugin
 
