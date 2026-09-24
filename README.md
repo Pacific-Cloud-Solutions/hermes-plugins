@@ -31,9 +31,10 @@ hermes plugins pack install https://raw.githubusercontent.com/Pacific-Cloud-Solu
 
 | Plugin | Does | Category | Catalog |
 |---|---|---|---|
-| _none yet_ | This repo is the home for plugins we intend to publish. | — | — |
+| `pcs-security-core` | Shared contract — findings, evidence, coverage, the provenance/taint model, and secret redaction. A foundation plugin: no tools of its own. | tools | — |
+| `pcs-security-auth-posture` | Read-only audit of local authentication posture — `sshd_config` and its drop-ins, `sudoers`, `authorized_keys`, UID 0 accounts. | tools | — |
 
-The calculator in `hermes_dev` is a local test fixture and deliberately does not live here.
+Both ship in the `pcs-security-guard` pack. Neither has a catalog entry yet.
 
 ## Layout
 
