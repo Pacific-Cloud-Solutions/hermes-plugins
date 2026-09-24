@@ -1,13 +1,36 @@
 name: pcs-security-guard
-description: The PCS security suite for Hermes Agent — read-only, local, advisory host auditing, one job per plugin, pinned to exact commit SHAs.
+description: The PCS security suite for Hermes Agent — read-only, local, advisory host auditing. One job per plugin, evidence-first findings that cite file and line, and coverage that names what could not be checked. Pick the tools you want; nothing here changes your system.
 version: 0.1.0
 author: Pacific Cloud Solutions
-plugins: []
-# Each entry is `repo:` + `subdir:` + `ref:` (a full 40-character commit SHA — branches and
-# short SHAs are rejected). Add one per published plugin, and repin it in the same commit that
-# changes the plugin:
+homepage: https://github.com/Pacific-Cloud-Solutions/hermes-plugins
+
+# Every entry pins a FULL 40-character commit SHA. Branches and short SHAs are
+# rejected. Repin each entry in the same commit that changes the plugin.
+plugins:
+  - repo: Pacific-Cloud-Solutions/hermes-plugins
+    subdir: plugins/pcs-security-core
+    ref: aeeb6e3aa95ee8e28f4a3af5683bdbe748eae817
+  - repo: Pacific-Cloud-Solutions/hermes-plugins
+    subdir: plugins/pcs-security-tls-posture
+    ref: aeeb6e3aa95ee8e28f4a3af5683bdbe748eae817
+  - repo: Pacific-Cloud-Solutions/hermes-plugins
+    subdir: plugins/pcs-security-log-triage
+    ref: aeeb6e3aa95ee8e28f4a3af5683bdbe748eae817
+  - repo: Pacific-Cloud-Solutions/hermes-plugins
+    subdir: plugins/pcs-security-network-exposure
+    ref: aeeb6e3aa95ee8e28f4a3af5683bdbe748eae817
+  - repo: Pacific-Cloud-Solutions/hermes-plugins
+    subdir: plugins/pcs-security-web-headers
+    ref: aeeb6e3aa95ee8e28f4a3af5683bdbe748eae817
+
+# pcs-security-auth-posture is deliberately NOT listed yet.
 #
-# plugins:
-#   - repo: Pacific-Cloud-Solutions/hermes-plugins
-#     subdir: plugins/<id>
-#     ref: <40-char-sha>
+# It audits authentication posture, so its source necessarily names the artifacts it
+# inspects — key files, the account database, and NOPASSWD entries. The install
+# scanner is lexical and treats those same strings as hostile, so the plugin scans
+# `dangerous`, and `--force` does not override a dangerous verdict.
+#
+# A pack install runs the install scanner for every plugin it contains, so listing
+# it here would fail the ENTIRE pack for everyone — including users who only wanted
+# the other five. It goes in once the declared-read-only-audit-intent signal lands
+# upstream and the plugin scans `safe` on a released Hermes.
