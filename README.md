@@ -36,8 +36,11 @@ hermes plugins pack install https://raw.githubusercontent.com/Pacific-Cloud-Solu
 | `pcs-security-tls-posture` | Read-only audit of certificate validity, key strength, and deprecated protocols or weak cipher suites in server configuration. | tools | — |
 | `pcs-security-log-triage` | Read-only triage of local logs — authentication failures correlated by source address, a success following a burst, crashes, and instruction-like content in log data. | tools | — |
 | `pcs-security-network-exposure` | Read-only audit of which services are reachable beyond loopback, prioritised by what the service is. | tools | — |
+| `pcs-security-web-headers` | Read-only audit of declared HTTP security headers — HSTS, CSP, framing and sniffing protection, version disclosure, and nginx `add_header` inheritance. | tools | — |
 
-All five ship in the `pcs-security-guard` pack. 
+All six plugins live in this repository; the `pcs-security-guard` pack installs
+five. `pcs-security-auth-posture` is held back until the declared-audit-intent
+signal lands upstream — **do not publish it before that dependency lands.**
 
 ## Layout
 

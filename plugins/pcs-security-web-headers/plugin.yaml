@@ -1,0 +1,30 @@
+name: pcs-security-web-headers
+version: 0.1.0
+description: Read-only audit of HTTP security headers declared in local web server configuration — HSTS, CSP, frame and sniffing protection, and version disclosure
+author: Pacific Cloud Solutions
+license: MIT
+manifest_version: 2
+api_version: 1
+homepage: https://github.com/Pacific-Cloud-Solutions/hermes-plugins
+tags:
+  - security
+  - hardening
+  - readonly
+  - http
+
+# No `audit:` declaration here, deliberately. This plugin never names an artifact
+# that the install scanner treats as hostile vocabulary — it reads web server
+# configuration and reports on the headers it declares.
+
+# pcs-security-core is imported lazily, on first use. Without it the tool still
+# REGISTERS but REFUSES TO RUN — no report is ever produced outside the taint
+# model. It is deliberately not imported at module scope, because `hermes plugins
+# doctor` and `hermes plugins validate` run a plugin in ISOLATION, where no
+# sibling directory exists. See bootstrap.py and README.md.
+requires_plugins:
+  - id: pcs-security-core
+    version_range: ">=0.1.0"
+
+provides_tools:
+  - web_headers
+provides_hooks: []
