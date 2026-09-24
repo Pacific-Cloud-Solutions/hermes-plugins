@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Build the published hero assets from the lossless master `docs/hero.png`.
 
-    python3 scripts/build_hero_assets.py
+    # Needs numpy + Pillow, so run it with Hermes's own interpreter:
+    #     ~/.hermes/hermes-agent/venv/bin/python
+    <hermes-python> scripts/build_hero_assets.py
 
 Produces:
 

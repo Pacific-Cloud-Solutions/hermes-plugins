@@ -14,7 +14,11 @@ entry has to be exactly right:
     manifest, so run that gate first.
 
 Usage:
-    python3 scripts/catalog_entry.py --plugin plugins/<id> --sha <40-hex> \
+    # Needs PyYAML *and* `hermes_cli.plugin_catalog`, so run it with Hermes's own
+    # interpreter — a bare `python3` exits 1 with "PyYAML is required" before it
+    # ever reaches the catalog loader:
+    #     ~/.hermes/hermes-agent/venv/bin/python
+    <hermes-python> scripts/catalog_entry.py --plugin plugins/<id> --sha <40-hex> \
         [--category tools] [--maintainer Pacific-Cloud-Solutions] [--verify] > entry.yaml
 
 `--verify` round-trips the generated YAML through the real catalog loader and fails if the

@@ -67,14 +67,28 @@ install path — `hermes plugins install <name>` clones this repo at the pinned 
 git add plugins/<id> && git commit -m "feat(<id>): ..." && git push
 
 # 2. generate the entry from the plugin's own manifest, and prove the loader accepts it
+#
+# Run this with HERMES's interpreter, never a bare `python3`. The script needs PyYAML
+# *and* imports `hermes_cli.plugin_catalog`, so a plain python3 fails twice over —
+# "PyYAML is required", exit 1, before it ever reaches the catalog loader.
+PY="$HOME/.hermes/hermes-agent/venv/bin/python"     # adjust to your Hermes install
 SHA=$(git rev-parse HEAD)
-python3 scripts/catalog_entry.py --plugin plugins/<id> --sha "$SHA" \
-    --category tools --maintainer Pacific-Cloud-Solutions --verify > /tmp/<id>.yaml
+"$PY" scripts/catalog_entry.py --plugin plugins/<id> --sha "$SHA" \
+    --category tools --maintainer Pacific-Cloud-Solutions \
+    --image "https://raw.githubusercontent.com/Pacific-Cloud-Solutions/hermes-plugins/$SHA/docs/hero-2x1.webp" \
+    --verify > /tmp/<id>.yaml
 
 # 3. preview the PR (no network writes), then open it
 scripts/open_catalog_pr.sh /tmp/<id>.yaml <id>
 scripts/open_catalog_pr.sh /tmp/<id>.yaml <id> --open-pr      # needs sign-off
 ```
+
+`--image` is optional — 45 of the 286 catalog entries carry one — but it is what gives the entry a
+card. Omit it and no `image:` field is emitted at all. The URL must be https on a GitHub host
+(`raw.githubusercontent.com`, `github.com`, or `*.githubusercontent.com`): the Desktop catalog
+browser never fans out to third-party hosts, and a raw URL pinned to the entry's SHA is as immutable
+as the sha itself. **A URL that violates this is dropped with a log warning, not an error** — the
+entry still loads, so you get a card-less entry and nothing tells you.
 
 Rules that the PR is reviewed against, from upstream `plugin-catalog/README.md`:
 
@@ -89,8 +103,8 @@ Rules that the PR is reviewed against, from upstream `plugin-catalog/README.md`:
    reviewer reads.
 8. Desktop plugins stay inside the plugin SDK.
 
-After a merge, re-pin `hermes-pack.yaml` to the same SHA in this repo, so pack installs and catalog
-installs resolve to identical code.
+After a merge, re-pin `pcs-security-guard.yaml` to the same SHA in this repo, so pack installs and
+catalog installs resolve to identical code.
 
 **Never push to `NousResearch/hermes-agent` and never open an upstream PR without explicit
 sign-off.** Develop, validate, and stage locally; the `--open-pr` step is a human decision.
@@ -118,8 +132,10 @@ Balanced quotes happen to survive, which makes this a silent trap.
 | `docs/hero.webp` | the master's own aspect, WebP q92 (131 KB) | the README hero |
 | `docs/hero-2x1.webp` | 2:1, 1600×800 (111 KB) | the catalog entry's `image:` field |
 
-Regenerate the two WebP files with `python3 scripts/build_hero_assets.py` — never hand-edit them,
-and never commit a hand-cropped replacement. The 2:1 is synthesised (the master is full-bleed:
+Regenerate the two WebP files with `"$PY" scripts/build_hero_assets.py` — never hand-edit them,
+and never commit a hand-cropped replacement. (That script needs `numpy` and `Pillow`, so it needs
+the same Hermes interpreter as `catalog_entry.py`; see "Publishing a plugin" for the `$PY` note.)
+The 2:1 is synthesised (the master is full-bleed:
 artwork reaches column 55, row 3, and a bottom crop to 836 would delete the subtitle), so the
 script carries the reasoning and the numbers.
 
@@ -139,7 +155,7 @@ middleware registration as undeclared — an upstream contract gap, not a plugin
 resolved upstream, pass middleware names to the generator explicitly:
 
 ```bash
-python3 scripts/catalog_entry.py --plugin plugins/<id> --sha "$SHA" --middleware "llm_call,pre_tool_call" --verify
+"$PY" scripts/catalog_entry.py --plugin plugins/<id> --sha "$SHA" --middleware "llm_call,pre_tool_call" --verify
 ```
 
 and expect the local `validate` run to warn on the declared-middleware row. Do not paper over it by
