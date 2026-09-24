@@ -56,39 +56,13 @@ hermes-plugins/
 
 ## Contributing a plugin
 
-Read `AGENTS.md` first. The short version:
+Read **[`AGENTS.md`](AGENTS.md)**. It is the single source of truth for the authoring contract, the
+two gates (`hermes plugins doctor` / `hermes plugins validate`), the catalog-submission runbook and
+the rules that PR is reviewed against.
 
-```bash
-hermes plugins doctor "$HERMES_HOME/plugins/<id>"      # runtime contract
-hermes plugins validate "$HERMES_HOME/plugins/<id>"    # catalog admission gate (CI)
-```
-
-Both must be clean, and the manifest's declared `provides_tools` / `provides_hooks` must match what
-`register()` actually registers — undeclared capability creep is treated as a security issue
-upstream.
-
-## Getting a plugin into the Hermes catalog
-
-Plugins are **not** merged into the hermes-agent source tree. What lands upstream is a reviewed
-`plugin-catalog/<name>.yaml` entry that pins your plugin's commit SHA. This repo carries the whole
-workflow:
-
-```bash
-python3 scripts/catalog_entry.py --plugin plugins/<id> --sha <40-char-sha> \
-    --category tools --maintainer Pacific-Cloud-Solutions \
-    --image https://raw.githubusercontent.com/Pacific-Cloud-Solutions/hermes-plugins/<40-char-sha>/docs/hero-2x1.webp \
-    > /tmp/<id>.yaml
-
-scripts/open_catalog_pr.sh /tmp/<id>.yaml <name>     # dry run — prints every step
-scripts/open_catalog_pr.sh /tmp/<id>.yaml <name> --open-pr   # fork, push, open the PR
-```
-
-`--image` must be an https URL on a GitHub host, pinned to the entry's commit — `docs/hero-2x1.webp`
-is the 2:1 asset the catalog card expects.
-
-The PR is opened against [`NousResearch/hermes-agent`](https://github.com/NousResearch/hermes-agent)
-and needs a human maintainer to merge it. Admission rules (SHA pins, no self-updating code, declared
-capabilities matching reality, SDK-only desktop code) are in that repo's `plugin-catalog/README.md`.
+It lives there on purpose rather than here: this section previously restated the runbook, and the
+copy drifted — it documented an invocation that fails, and it omitted the push-first requirement and
+all eight review rules. One copy cannot disagree with itself.
 
 ## License
 
