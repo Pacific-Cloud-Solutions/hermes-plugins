@@ -1,6 +1,6 @@
 name: pcs-security-log-triage
-version: 0.1.0
-description: Read-only triage of local system logs — correlated authentication anomalies, service crashes and instruction-like content, each cited to file and line
+version: 0.2.0
+description: Read-only triage of local logs — correlated authentication anomalies, password sprays, account lifecycle events, service crashes, and logs that have gone silent
 author: Pacific Cloud Solutions
 license: MIT
 manifest_version: 2

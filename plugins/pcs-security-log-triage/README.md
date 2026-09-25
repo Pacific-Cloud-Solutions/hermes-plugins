@@ -18,6 +18,35 @@ hostile vocabulary, so it needs no declared-audit-intent signal.
 | `LOG-003` | Service crash, fault or fatal-error lines, grouped by source |
 | `LOG-004` | Instruction-like content in log data — **reported as a finding, never obeyed** |
 | `LOG-005` | No log was readable at all (coverage gap, not a finding) |
+| `LOG-006` | Authentication failures **spread across accounts** — the password spray LOG-001 cannot see (HIGH), or one account attacked from many sources (MEDIUM) |
+| `LOG-008` | Account/group state changes and **denied** privilege-escalation attempts |
+| `LOG-010` | A log that exists but has stopped receiving entries (INFO — a coverage observation) |
+
+## The spray that per-source correlation cannot see
+
+`LOG-001` groups failures by **source address**. That is the right correlation for a brute
+force, and it is structurally blind to the attack that replaced it:
+
+```
+Failed password for invalid user admin    from 203.0.113.1    # 1 failure
+Failed password for invalid user oracle   from 203.0.113.2    # 1 failure
+Failed password for invalid user postgres from 203.0.113.3    # 1 failure
+... 7 more accounts, one failure each, from 7 more addresses
+```
+
+No address reaches the burst threshold, so `LOG-001` reports nothing — correctly, by its own
+rule. `LOG-006` exists because the absence of a burst is not the absence of an attack: this
+is a password spray, and it is *shaped* this way specifically to stay under per-source
+thresholds. It is graded **HIGH** and reports how many distinct accounts were targeted and
+from how many addresses.
+
+The same blind spot runs the other way. One account tried from many addresses, each source
+contributing too few attempts to trip anything, is invisible for the identical reason —
+`LOG-006` reports that shape at **MEDIUM**.
+
+Both are one instance of a rule the whole suite follows: **correlate on the axis the adversary
+is not controlling.** Grouping by source is a choice, and an attacker who knows the choice
+simply spreads across the other dimension.
 
 ## Install
 
