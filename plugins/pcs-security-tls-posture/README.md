@@ -20,6 +20,9 @@ no declared-audit-intent signal and no special handling at admission.
 | `TLS-004` | RSA/DSA key below 2048 bits, or EC below 224 (CRITICAL below 1024) |
 | `TLS-005` | Certificate signed with MD5 or SHA-1 |
 | `TLS-006` | Certificate is self-signed |
+| `TLS-007` | The certificate a server **presents** is a leaf with no chain (HIGH when the correct `fullchain.pem` sits beside it) |
+| `TLS-008` | A server config names a certificate file that **does not exist**, or one outside the audit root |
+| `TLS-009` | A server presents a certificate **this audit never read** (INFO — a coverage gap, never silence) |
 | `TLS-010` | A deprecated protocol is **enabled** (`SSLv3`, `TLS 1.0`, `TLS 1.1`) |
 | `TLS-011` | A weak cipher suite is **offered** (`RC4`, `3DES`, `NULL`, `EXPORT`, …) |
 | `TLS-012` | A TLS server config exists with no explicit protocol directive (INFO, opt-in) |
@@ -71,6 +74,47 @@ an audit tool's schema.
 undecodable is recorded in `coverage.checks_skipped` with its reason. **Unreadable
 is not the same as valid**, and the report never implies otherwise.
 `Report.verdict()` has no code path that returns "secure".
+
+## The certificate a server actually presents
+
+`TLS-007`, `TLS-008` and `TLS-009` exist because a fact about a *file* is not a fact about
+a *service*. Reading every certificate in `/etc/ssl/certs` tells you which files are bad; it
+cannot tell you that the certificate nginx serves on 443 is one of them. So this plugin
+reads the config, finds the `ssl_certificate` / `SSLCertificateFile` directives, and joins
+the two halves:
+
+```
+TLS-001 [high] etc/ssl/certs/exp3.crt expired 2093 day(s) ago. Served by etc/nginx/nginx.conf:12.
+TLS-007 [high] `ssl_certificate` at etc/nginx/nginx.conf:2 names
+               `/etc/letsencrypt/live/example.com/cert.pem`, which holds one certificate,
+               while `etc/letsencrypt/live/example.com/fullchain.pem` — the chain for the
+               same name — sits in the same directory.
+```
+
+That trailing `Served by` clause is the whole point. The finding now names a live listener and
+the exact line to edit, and it carries the `served` tag so a report can be filtered to real
+exposure. (Both lines above are verbatim output from the correlation harness, not a sketch.)
+
+Two of these checks are the same bug in the opposite direction:
+
+- **`cert.pem` vs `fullchain.pem`.** A Let's Encrypt directory contains both. Nginx merges
+  them in the obvious-looking way and picks the wrong one — `cert.pem` is the leaf alone, so
+  the intermediate is never sent and clients that have not already cached it fail the
+  handshake. Whether that bites you depends on the browser, so it presents as intermittent
+  rather than broken, and no expiry check can see it. It is reported **HIGH** only when the
+  correct `fullchain.pem` is sitting in the same directory, which is what makes it a wrong
+  *reference* rather than a deployment that legitimately serves one certificate.
+- **Not guessing.** A `ssl_certificate` that names a relative path is recorded as a
+  limitation, never resolved: both servers resolve those against a prefix directory this
+  tool cannot read, so "resolving" it would mean inventing a path and then reporting on a
+  file that was never identified. Apache's `SSLCertificateChainFile` is honoured for the
+  same reason — when the chain is supplied separately, a single-certificate
+  `SSLCertificateFile` is **correct**, and flagging it would be a false positive.
+
+`TLS-009` is deliberately the odd one out: it fires when a server presents a certificate that
+is *outside* the search paths, so the checks that judge expiry and key strength never saw it.
+It is INFO and it is a coverage gap, not a verdict — but without it, a server could present a
+certificate this plugin missed entirely and the report would say nothing at all.
 
 ## Three things that are easy to get wrong
 

@@ -24,7 +24,7 @@ see. That is recorded as a coverage limitation, never as a pass.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -80,6 +80,10 @@ CERT_GLOBS = (
     "etc/pki/tls/certs/*.crt",
     "etc/pki/tls/certs/localhost.crt",
     "etc/letsencrypt/live/*/cert.pem",
+    # The file a correctly configured server actually SERVES. Auditing only `cert.pem`
+    # meant reading the file you should not point a server at and ignoring the one you
+    # should — so the expiry of a well-configured host was never evaluated at all.
+    "etc/letsencrypt/live/*/fullchain.pem",
 )
 CONFIG_FILES = (
     "etc/nginx/nginx.conf",
@@ -97,6 +101,20 @@ CONFIG_GLOBS = (
 
 _PROTOCOL_DIRECTIVE = re.compile(r"^\s*(ssl_protocols|SSLProtocol)\s+(.+?);?\s*$")
 _CIPHER_DIRECTIVE = re.compile(r"^\s*(ssl_ciphers|SSLCipherSuite)\s+(.+?);?\s*$")
+
+#: A directive that names the certificate a server actually SERVES. This is the join
+#: between the two halves of this plugin. Without it the tool can only ever say "this
+#: file is expired" — never "the certificate nginx serves on 443 is expired", which is
+#: the claim an operator can act on. Both spellings are matched because the same host
+#: can run both servers, and they disagree about how a chain is supplied.
+_CERT_REF = re.compile(r"^\s*ssl_certificate\s+(?P<path>[^\s;]+)\s*;")
+_APACHE_CERT_REF = re.compile(r"^\s*SSLCertificateFile\s+(?P<path>[^\s;]+)\s*;?\s*$")
+#: Apache can supply the intermediates separately. When it does, a single-certificate
+#: `SSLCertificateFile` is CORRECT and flagging it would be a false positive.
+_APACHE_CHAIN_REF = re.compile(r"^\s*SSLCertificateChainFile\s+[^\s;]+")
+#: Counting blocks, not parsing them: how many certificates a file HOLDS is the whole
+#: question for an incomplete chain, and a full X.509 parse cannot answer it.
+_PEM_CERT_BLOCK = re.compile(r"^-----BEGIN CERTIFICATE-----\s*$", re.MULTILINE)
 
 #: Exact tokens, compared after case-folding. Matching these as substrings would
 #: flag `TLSv1.2` on the `TLSv1` pattern — the mistake that makes a scanner
@@ -176,13 +194,23 @@ class Audit:
             self.limitations.append(text)
 
     def settle(self) -> None:
-        """Promote evaluated checks to 'ran'.
+        """Promote evaluated checks to 'ran', and make coverage idempotent.
 
         Called once at the end, so a check that had input but produced no finding
         is still reported as having run — 'no findings for these checks' must mean
         the checks actually executed, or the verdict is a lie.
+
+        Skipped entries are de-duplicated because a run may read the same config
+        from two checks (the certificate-reference pass and the directive pass). The
+        same reason recorded twice is one reason, and a coverage list padded with
+        repeats misrepresents how much was actually skipped.
         """
         self.ran(*sorted(self._evaluated))
+        unique: list[tuple[str, str]] = []
+        for pair in self.checks_skipped:
+            if pair not in unique:
+                unique.append(pair)
+        self.checks_skipped[:] = unique
 
     # -- bounded reads -------------------------------------------------------
     def path(self, relative: str) -> Path:
@@ -774,12 +802,303 @@ def _is_tls_server_config(audit: Audit, rel: str) -> bool:
     ))
 
 
+# -- certificate <-> server correlation ---------------------------------------
+
+@dataclass(frozen=True)
+class CertReference:
+    """One config directive that names a certificate file."""
+
+    directive: str   # `ssl_certificate` or `SSLCertificateFile`
+    written: str     # exactly as the config spells it
+    relative: str    # root-relative, or "" when the path is not absolute
+    source: str      # the config file the directive is in
+    lineno: int
+
+    @property
+    def where(self) -> str:
+        return f"{self.source}:{self.lineno}"
+
+
+def collect_cert_references(
+    audit: Audit,
+) -> tuple[list[CertReference], dict[str, list[str]], set[str]]:
+    """Find every certificate a server configuration points at.
+
+    Returns `(references, served, chain_supplied)`, where `served` maps a root-relative
+    certificate path to the `file:line` locations that present it, and `chain_supplied`
+    is the set of config files that declare Apache's separate chain directive.
+
+    Only ABSOLUTE paths are resolved. Both servers resolve a relative `ssl_certificate`
+    against a prefix directory this tool cannot know, so guessing one would manufacture
+    a finding about a file that was never actually identified.
+    """
+    references: list[CertReference] = []
+    served: dict[str, list[str]] = {}
+    chain_supplied: set[str] = set()
+
+    for rel in audit.config_files():
+        text = audit.read(rel, "TLS-010")
+        if text is None:
+            continue
+        for lineno, raw in enumerate(text.splitlines(), 1):
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            if _APACHE_CHAIN_REF.match(line):
+                chain_supplied.add(rel)
+                continue
+            m = _CERT_REF.match(line) or _APACHE_CERT_REF.match(line)
+            if not m:
+                continue
+            written = m.group("path").strip().strip('"').strip("'")
+            ref = CertReference(
+                directive=("ssl_certificate" if line.startswith("ssl_certificate")
+                           else "SSLCertificateFile"),
+                written=written,
+                relative=(written.lstrip("/") if written.startswith("/") else ""),
+                source=rel,
+                lineno=lineno,
+            )
+            references.append(ref)
+            if ref.relative:
+                served.setdefault(ref.relative, []).append(ref.where)
+    return references, served, chain_supplied
+
+
+def check_cert_references(
+    audit: Audit,
+    references: list[CertReference],
+    chain_supplied: set[str],
+) -> None:
+    """TLS-007 / TLS-008 / TLS-009 — the certificate a server actually presents.
+
+    A certificate finding on its own says "this FILE is wrong". These say "the file the
+    server PRESENTS is wrong", which is the difference between a scanner dump and a
+    finding: the first is a fact about a file, the second a fact about a service.
+    """
+    if not references:
+        audit.skip("TLS-007", "no configuration named a certificate file")
+        audit.skip("TLS-008", "no configuration named a certificate file")
+        return
+
+    unresolvable = [r for r in references if not r.relative]
+    if unresolvable:
+        first = unresolvable[0]
+        audit.note(
+            f"{len(unresolvable)} certificate reference(s) were RELATIVE paths and could not "
+            f"be resolved (first at {first.where}: `{first.written}`). Both servers resolve "
+            "those against a prefix directory this tool does not know, so no statement is "
+            "made about them."
+        )
+        if len(unresolvable) == len(references):
+            audit.skip("TLS-007", "every certificate reference was a relative path")
+            audit.skip("TLS-008", "every certificate reference was a relative path")
+            return
+
+    audited = set(audit.cert_files())
+    resolved = 0
+
+    for ref in references:
+        if not ref.relative:
+            continue
+        try:
+            path = audit.path(ref.relative)
+        except ValueError as exc:
+            audit.add(Finding(
+                check_id="TLS-008",
+                title="Configured certificate path escapes the audit root",
+                severity=Severity.HIGH,
+                assertion=f"`{ref.directive}` at {ref.where} names `{ref.written}`, which {exc}.",
+                rationale=(
+                    "A certificate path resolving outside the tree being audited cannot be read "
+                    "here, so nothing is known about the certificate this server presents — and "
+                    "the report would otherwise say nothing about a live listener."
+                ),
+                remediation="Point the directive at a path inside the audited tree, or widen the audit root.",
+                reachability=Reachability.REMOTE_UNAUTH,
+                evidence=(_text("TLS-008", ref.source, f"line {ref.lineno}", ref.written,
+                                "escapes the audit root"),),
+                tags=("tls", "certificate", "configuration"),
+            ))
+            resolved += 1
+            continue
+
+        resolved += 1
+
+        if not path.is_file():
+            audit.add(Finding(
+                check_id="TLS-008",
+                title="Configured certificate file does not exist",
+                severity=Severity.HIGH,
+                assertion=(
+                    f"`{ref.directive}` at {ref.where} names `{ref.written}`, which is not "
+                    "present under the audit root."
+                ),
+                rationale=(
+                    "A server configured to present a file that is not there does not serve TLS "
+                    "on that listener at all — either it refuses to start or it fails every "
+                    "handshake. Both are an outage, and nothing else in this report says so."
+                ),
+                remediation=f"Restore `{ref.written}`, or point the directive at the deployed certificate.",
+                reachability=Reachability.REMOTE_UNAUTH,
+                evidence=(_text("TLS-008", ref.source, f"line {ref.lineno}", ref.written,
+                                "no such file"),),
+                references=("CIS 3.10",),
+                tags=("tls", "certificate", "configuration"),
+            ))
+            continue
+
+        try:
+            body = path.read_bytes().decode("utf-8", errors="replace")
+        except OSError as exc:
+            audit.skip("TLS-007", f"{ref.relative}: {exc.strerror or exc}")
+            continue
+
+        held = len(_PEM_CERT_BLOCK.findall(body))
+        sibling = path.parent / "fullchain.pem"
+
+        if (
+            held == 1
+            and path.name != "fullchain.pem"
+            and sibling.is_file()
+            # Apache may supply the chain in a separate directive, in which case pointing
+            # `SSLCertificateFile` at the leaf is CORRECT. Without this the same
+            # configuration is flagged for doing the right thing.
+            and ref.source not in chain_supplied
+        ):
+            audit.add(Finding(
+                check_id="TLS-007",
+                title="Server presents a leaf certificate while the full chain sits beside it",
+                severity=Severity.HIGH,
+                assertion=(
+                    f"`{ref.directive}` at {ref.where} names `{ref.written}`, which holds one "
+                    f"certificate, while `{sibling.relative_to(audit.root)}` — the chain for the "
+                    "same name — sits in the same directory."
+                ),
+                rationale=(
+                    "The intermediate is never sent, so every client that has not already cached "
+                    "it fails the handshake — typically browsers that have not visited a sibling "
+                    "site, which makes this look intermittent rather than broken. The correct "
+                    "file is in the same directory, so it is a one-word fix that no "
+                    "certificate-expiry check can see."
+                ),
+                remediation=f"Point `{ref.directive}` at `{str((sibling).relative_to(audit.root))}`.",
+                reachability=Reachability.REMOTE_UNAUTH,
+                evidence=(
+                    _text("TLS-007", ref.source, f"line {ref.lineno}", ref.written,
+                          "holds a single certificate"),
+                    _text("TLS-007", str(sibling.relative_to(audit.root)), "present",
+                          "fullchain.pem", "holds the intermediate"),
+                ),
+                false_positive_notes=(
+                    "Only reported when a `fullchain.pem` sibling exists. That is what makes it a "
+                    "wrong-FILE reference rather than a deployment that legitimately serves one "
+                    "certificate."
+                ),
+                references=("RFC 5246 7.4.2",),
+                tags=("tls", "certificate", "configuration", "chain"),
+            ))
+        elif held == 1 and ref.directive == "ssl_certificate" and ref.source not in chain_supplied:
+            info = audit.load_cert(ref.relative)
+            if info is not None and not getattr(info, "self_signed", False):
+                audit.add(Finding(
+                    check_id="TLS-007",
+                    title="`ssl_certificate` presents a single certificate, not a chain",
+                    severity=Severity.MEDIUM,
+                    assertion=(
+                        f"`ssl_certificate` at {ref.where} names `{ref.written}`, which holds one "
+                        "certificate, and no chain file is configured for it."
+                    ),
+                    rationale=(
+                        "nginx has no separate chain directive: whatever `ssl_certificate` points "
+                        "at is exactly what is sent. A single non-self-signed certificate therefore "
+                        "omits its intermediate, and clients fail unless they already hold it."
+                    ),
+                    remediation="Concatenate the intermediate into the file the directive points at.",
+                    reachability=Reachability.REMOTE_UNAUTH,
+                    confidence=Confidence.SUSPECTED,
+                    evidence=(_text("TLS-007", ref.source, f"line {ref.lineno}", ref.written,
+                                    "holds a single certificate"),),
+                    false_positive_notes=(
+                        "A deployment whose clients pin the intermediate, or an internal CA whose "
+                        "root is installed everywhere, is not broken by this. Reported at MEDIUM "
+                        "for that reason."
+                    ),
+                    tags=("tls", "certificate", "configuration", "chain"),
+                ))
+
+        if ref.relative not in audited:
+            audit.add(Finding(
+                check_id="TLS-009",
+                title="Server presents a certificate this audit did not read",
+                severity=Severity.INFO,
+                assertion=(
+                    f"`{ref.directive}` at {ref.where} names `{ref.written}`, which exists but is "
+                    "not under the certificate search paths, so its expiry, key size and signature "
+                    "were not evaluated."
+                ),
+                rationale=(
+                    "This finding exists to prevent a false clean bill of health. A server can "
+                    "present a certificate every other check in this run missed, and the report "
+                    "would otherwise be silent about it."
+                ),
+                remediation=(
+                    "Move the certificate under the standard paths, or extend the search paths if "
+                    "this location is intentional."
+                ),
+                reachability=Reachability.REMOTE_UNAUTH,
+                confidence=Confidence.CONFIRMED,
+                evidence=(_text("TLS-009", ref.source, f"line {ref.lineno}", ref.written,
+                                "outside the audited certificate paths"),),
+                tags=("tls", "certificate", "coverage"),
+            ))
+
+    if resolved:
+        audit.ran("TLS-007", "TLS-008")
+    else:
+        audit.skip("TLS-007", "no resolvable certificate reference")
+        audit.skip("TLS-008", "no resolvable certificate reference")
+
+
+def _attach_serving_context(findings: list, served: dict[str, list[str]]) -> list:
+    """Tie every certificate finding to the server blocks that present it.
+
+    `Finding` is frozen, so this rebuilds rather than mutates. The assertion stays TRUSTED:
+    both halves are strings this tool produced (a relative path it walked, a line number it
+    counted), never text lifted out of a configuration file.
+    """
+    out: list = []
+    for finding in findings:
+        where: list[str] = []
+        for ev in finding.evidence:
+            for loc in served.get(ev.source, []):
+                if loc not in where:
+                    where.append(loc)
+        if not where:
+            out.append(finding)
+            continue
+        tags = finding.tags if "served" in finding.tags else tuple(finding.tags) + ("served",)
+        out.append(replace(
+            finding,
+            assertion=f"{finding.assertion} Served by {', '.join(where)}.",
+            tags=tags,
+        ))
+    return out
+
+
 def run_all(root: str = "/", include_info: bool = False, expiry_days: int = 30) -> Audit:
     core()  # bind the contract before any check builds a Finding
     audit = Audit(root, expiry_days)
+    # References are collected FIRST so the certificate checks can cite the server block
+    # that actually presents each file. Without this the two halves of the plugin are
+    # independent and the report can only make claims about files.
+    references, served, chain_supplied = collect_cert_references(audit)
     check_certificates(audit)
     check_server_config(audit, include_info)
+    check_cert_references(audit, references, chain_supplied)
     audit.settle()
+    # After settle(), so a check promoted to `ran` is still correlated.
+    audit.findings[:] = _attach_serving_context(audit.findings, served)
     audit.limitations.append(
         "Only the checks listed in coverage.checks_run were attempted. This audit does not "
         "connect to any service, does not perform a handshake, does not enumerate listeners, "

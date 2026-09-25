@@ -1,6 +1,6 @@
 name: pcs-security-tls-posture
-version: 0.1.0
-description: Read-only audit of local TLS posture — certificate validity, key strength, deprecated protocols and weak cipher suites
+version: 0.2.0
+description: Read-only audit of local TLS posture — certificate validity, key strength, deprecated protocols, weak cipher suites, and the certificate each server actually presents
 author: Pacific Cloud Solutions
 license: MIT
 manifest_version: 2
