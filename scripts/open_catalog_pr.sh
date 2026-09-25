@@ -69,6 +69,43 @@ gh api "repos/$PLUGIN_REPO/commits/$SHA" >/dev/null 2>&1 \
   || { echo "error: $PLUGIN_REPO has no commit $SHA — push the plugin repo first (the pin must resolve)" >&2; exit 1; }
 work "resolves: $PLUGIN_REPO@${SHA:0:12}"
 
+# The PR body states that validation passed, so run it here rather than asking a human to
+# paste the output. An earlier version left a literal `<paste the real output here>` in the
+# body and NOTHING filled it — running --open-pr would have published a PR quoting a
+# placeholder. Running it in-script makes the claim automatically true, and when the command
+# cannot run, the body says THAT instead of quietly dropping the evidence.
+HERMES_BIN="${HERMES_BIN:-hermes}"
+PLUGIN_DIR="plugins/$NAME"
+VALIDATE_FILE="$(mktemp)"
+trap 'rm -f "$VALIDATE_FILE"' EXIT
+if command -v "$HERMES_BIN" >/dev/null 2>&1 && [ -d "$PLUGIN_DIR" ]; then
+  # The body claims the validation was run against the PINNED commit. Validate actually
+  # reads the working copy, so that claim only holds when the working copy IS the pin:
+  # a dirty tree would publish a passing report for code that is not what gets installed.
+  HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
+  if [ "$HEAD_SHA" != "$SHA" ]; then
+    echo "error: working HEAD is ${HEAD_SHA:0:12}… but the entry pins ${SHA:0:12}…" >&2
+    echo "       check out the pinned commit, or regenerate the entry at HEAD." >&2
+    exit 1
+  fi
+  if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+    echo "error: working tree is dirty, so a passing report would not describe the pinned commit" >&2
+    git status --porcelain | sed 's/^/       /' >&2
+    exit 1
+  fi
+  if "$HERMES_BIN" plugins validate "$PLUGIN_DIR" >"$VALIDATE_FILE" 2>&1; then
+    work "validation captured ($(wc -l <"$VALIDATE_FILE" | tr -d ' ') lines, passing)"
+  else
+    echo "error: 'hermes plugins validate $PLUGIN_DIR' did not pass, and the PR body claims it does" >&2
+    sed 's/^/    /' "$VALIDATE_FILE" >&2
+    exit 1
+  fi
+else
+  printf 'could not run validation: %s not on PATH, or %s missing\n' \
+    "$HERMES_BIN" "$PLUGIN_DIR" >"$VALIDATE_FILE"
+  work "WARNING: validation could not be run — the PR body will say so rather than imply it passed"
+fi
+
 FILENAME="plugin-catalog/$NAME.yaml"
 BRANCH="catalog/$NAME"
 
@@ -95,7 +132,7 @@ Adds a catalog entry for **__NAME__** — `plugin-catalog/__NAME__.yaml`, pinned
 Validation, run against the pinned commit with `hermes plugins validate`:
 
 ```
-<paste the real output here>
+__VALIDATE__
 ```
 
 The declared capabilities in the entry match what `register()` registers at that commit, and
@@ -106,6 +143,11 @@ BODY=$(printf '%s\n' "$BODY" \
         -e "s|__SHORT__|${SHA:0:12}|g" \
         -e "s|__PLUGIN_REPO__|$PLUGIN_REPO|g" \
         -e "s|__SHA__|$SHA|g")
+# Multiline substitution: `sed` inserts one line, not a block, so awk swaps the single
+# placeholder LINE for the contents of the captured validation output.
+BODY=$(printf '%s\n' "$BODY" | awk -v vf="$VALIDATE_FILE" '
+  /__VALIDATE__/ { while ((getline line < vf) > 0) print line; close(vf); next }
+  { print }')
 
 step "4/6 pull request"
 work "title: $TITLE"
