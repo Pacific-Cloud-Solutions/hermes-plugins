@@ -83,10 +83,21 @@ SHA=$(git rev-parse HEAD)
     --image "https://raw.githubusercontent.com/Pacific-Cloud-Solutions/hermes-plugins/$SHA/docs/hero-2x1.webp" \
     --verify > /tmp/<id>.yaml
 
-# 3. preview the PR (no network writes), then open it
+# 3. preflight the whole bundle — entry, pack and plugin must agree. Read-only.
+"$PY" scripts/preflight_catalog.py /tmp/<id>.yaml        # exit 1 = do not open the PR
+
+# 4. preview the PR (no network writes), then open it
 scripts/open_catalog_pr.sh /tmp/<id>.yaml <id>
 scripts/open_catalog_pr.sh /tmp/<id>.yaml <id> --open-pr      # needs sign-off
 ```
+
+`preflight_catalog.py` exists because the same fact is written down in three places — the entry
+NousResearch reviews, the pack a user installs, and the plugin on disk — and they drift apart
+silently. It catches the drift that has actually bitten this repo: a pack pin left behind by a
+later plugin change (so a pack install resolves to older code than the entry pins), an entry whose
+`version` or `name` no longer matches `plugin.yaml`, a capability list that no longer matches what
+`register()` registers, a SHA that was never pushed, a working tree whose HEAD is not the commit the
+entry pins. It asserts that the *claims* agree; it does not assert the plugin is any good — run it.
 
 `--image` is optional — 45 of the 286 catalog entries carry one — but it is what gives the entry a
 card. Omit it and no `image:` field is emitted at all. The URL must be https on a GitHub host
