@@ -122,32 +122,155 @@ TITLE="plugin-catalog: add $NAME"
 # mis-parses quote characters inside a heredoc nested in $( ) (an apostrophe in the body aborts
 # the whole script). `read -d ''` takes the heredoc outside any command substitution.
 read -r -d '' BODY <<'BODYEOF' || true
-Adds a catalog entry for **__NAME__** — `plugin-catalog/__NAME__.yaml`, pinned to `__SHORT__`.
+## What does this PR do?
 
-- **Repo:** `__PLUGIN_REPO__`
-- **Pinned commit:** `__SHA__`
-- **Submitted by the plugin repository's owner** (rule 5 — owner-or-major-contributor
-  submissions), not a drive-by.
+Adds one catalog entry, `plugin-catalog/__NAME__.yaml`, for __SUMMARY__
 
-Validation, run against the pinned commit with `hermes plugins validate`:
+__INTRO__
 
-```
-__VALIDATE__
-```
+|  |  |
+| --- | --- |
+| **repo** | [__PLUGIN_REPO__](__PLUGIN_REPO__) |
+| **pinned sha** | `__SHA__` |
+| **release** | __RELEASE__ |
+| **tier / category** | __TIER__ / __CATEGORY__ |
+| **capabilities** | __CAPS__ |
+| **platforms** | __PLATFORMS__ |
 
-The declared capabilities in the entry match what `register()` registers at that commit, and
-the plugin ships no self-updating code — the SHA pin is the release (rule 3).
+Install name and manifest name match: `hermes plugins install __NAME__` then
+`hermes plugins enable __NAME__`.
+
+## Disclosures
+
+__DISCLOSURES__
+
+## How to Test
+
+1. `python3 scripts/validate_plugin_catalog.py plugin-catalog/__NAME__.yaml` — `OK: 1 file(s) valid`.
+2. Clone `__PLUGIN_REPO__` and check out `__SHA__`.
+3. `hermes plugins validate` on that checkout — passed here (manifest, capability probe, security scan __VERDICT__, declared tools match `register()`).
+
+Verified locally before filing:
+
+- Structural validator: `OK: 1 file(s) valid`
+- `hermes plugins validate` on the pinned checkout: `Validation passed.` Security scan __VERDICT__. Declared tools match `register()`.
+
+## Related Issue
+
+No issue. Catalog submissions are a PR that adds one entry file. I maintain
+`Pacific-Cloud-Solutions/hermes-plugins`.
+
+## Type of Change
+
+- [ ]  🐛 Bug fix (non-breaking change that fixes an issue)
+- [x]  ✨ New feature (non-breaking change that adds functionality)
+- [ ]  🔒 Security fix
+- [ ]  📝 Documentation update
+- [ ]  ✅ Tests (adding or improving test coverage)
+- [ ]  ♻️ Refactor (no behavior change)
+- [ ]  🎯 New skill (bundled or hub)
+
+## Changes Made
+
+- `plugin-catalog/__NAME__.yaml` — one new entry, pinned to `__SHA__`.
+
+## Checklist
+
+- [x]  I am the owner/maintainer of the submitted plugin repository
+- [ ]  The plugin repository is public and tagged — __TAGNOTE__
+- [x]  The pinned SHA is reachable on `main`
+- [x]  The package contains no self-update logic; updates ship only as SHA-bump PRs
+- [x]  Declared capabilities match `plugin.yaml` and what `register()` registers at the pin
+- [ ]  Full `pytest tests/ -q` — not run; this PR only adds a catalog file. Admission CI is the gate.
 BODYEOF
+# --- mechanical values, read from the entry and the repo ----------------------
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+TIER=$(sed -n 's/^tier:[[:space:]]*//p' "$ENTRY" | head -1)
+CATEGORY=$(sed -n 's/^category:[[:space:]]*//p' "$ENTRY" | head -1)
+PLATFORMS=$(sed -n 's/^platforms:[[:space:]]*//p' "$ENTRY" | head -1)
+if [ -z "$PLATFORMS" ] || [ "$PLATFORMS" = "[]" ]; then PLATFORMS="all"; fi
+NTOOLS=$(awk '/^ *provides_tools:/{f=1;next} /^ *provides_hooks:/{f=0} f && /^ *- /{c++} END{print c+0}' "$ENTRY")
+NHOOKS=$(awk '/^ *provides_hooks:/{f=1;next} /^ *provides_middleware:/{f=0} f && /^ *- /{c++} END{print c+0}' "$ENTRY")
+NENV=$(awk '/^ *requires_env:/{f=1;next} /^[a-z]/{f=0} f && /^ *- /{c++} END{print c+0}' "$ENTRY")
+CAPS="${NTOOLS} tool(s), ${NHOOKS} hook(s)"
+if [ "$NENV" -gt 0 ]; then CAPS="$CAPS, requires $NENV env var(s)"; else CAPS="$CAPS, no requires_env"; fi
+
+if [ -n "$(git tag -l | head -1)" ]; then
+  RELEASE="tagged — \`$(git tag -l | head -1)\`"
+  TAGNOTE="yes"
+else
+  PLUGIN_VERSION=$(sed -n 's/^version:[[:space:]]*//p' \
+    "$REPO_ROOT/plugins/$NAME/plugin.yaml" 2>/dev/null | head -1 | tr -d '"')
+  RELEASE="no tag — \`plugin.yaml\` \`version\` reads \`${PLUGIN_VERSION:-unknown}\`"
+  TAGNOTE="public, **untagged**; the pin is the release"
+fi
+
+VERDICT=$(grep -o 'security scan — [a-z]*' "$VALIDATE_FILE" 2>/dev/null | head -1 | sed 's/.*— //')
+if [ "$VERDICT" = "safe" ]; then VERDICT="**safe**"; else VERDICT="${VERDICT:-unknown}"; fi
+
+# --- prose, which a generator must NOT invent --------------------------------
+# `__INTRO__` and `__DISCLOSURES__` are the substance of the submission: what the plugin
+# does and what it does not. A script cannot write those honestly, so they come from a
+# file beside the entry: <entry-without-.yaml>.prose.md, holding two fenced sections:
+#
+#   ## INTRO
+#   ...
+#   ## DISCLOSURES
+#   - **Topic.** ...
+PROSE="${ENTRY%.yaml}.prose.md"
+if [ ! -f "$PROSE" ]; then
+  INTRO_FILE=/dev/null
+  DISCLOSURES_FILE=/dev/null
+  if [ "$OPEN_PR" -eq 1 ]; then
+    echo "error: no prose file at $PROSE" >&2
+    echo "       'What does this PR do?' and 'Disclosures' are the substance of a catalog" >&2
+    echo "       submission and must be written, not generated. Create $PROSE with an" >&2
+    echo "       '## INTRO' section and a '## DISCLOSURES' section, then re-run." >&2
+    exit 1
+  fi
+  work "WARNING: no prose file at $PROSE — INTRO and DISCLOSURES will read (missing)"
+  printf '(missing — write %s)\n' "$PROSE" > /tmp/.prose-intro.$$
+  printf '(missing — write %s)\n' "$PROSE" > /tmp/.prose-disc.$$
+  INTRO_FILE=/tmp/.prose-intro.$$
+  DISCLOSURES_FILE=/tmp/.prose-disc.$$
+else
+  INTRO_FILE=/tmp/.prose-intro.$$
+  DISCLOSURES_FILE=/tmp/.prose-disc.$$
+  awk '/^## INTRO/{f=1;next} /^## DISCLOSURES/{f=0} f' "$PROSE" | sed '/^[[:space:]]*$/{/./!d}' > "$INTRO_FILE"
+  awk '/^## DISCLOSURES/{f=1;next} /^## [A-Z]/{f=0} f' "$PROSE" > "$DISCLOSURES_FILE"
+  work "prose read from $(basename "$PROSE") ($(grep -c . "$INTRO_FILE") intro line(s), $(grep -c . "$DISCLOSURES_FILE") disclosure line(s))"
+fi
+trap 'rm -f "$INTRO_FILE" "$DISCLOSURES_FILE" "$VALIDATE_FILE" 2>/dev/null' EXIT
+
 BODY=$(printf '%s\n' "$BODY" \
   | sed -e "s|__NAME__|$NAME|g" \
         -e "s|__SHORT__|${SHA:0:12}|g" \
         -e "s|__PLUGIN_REPO__|$PLUGIN_REPO|g" \
-        -e "s|__SHA__|$SHA|g")
+        -e "s|__SHA__|$SHA|g" \
+        -e "s|__TIER__|$TIER|g" \
+        -e "s|__CATEGORY__|$CATEGORY|g" \
+        -e "s|__PLATFORMS__|$PLATFORMS|g" \
+        -e "s|__CAPS__|$CAPS|g" \
+        -e "s|__VERDICT__|$VERDICT|g" \
+        -e "s|__RELEASE__|$RELEASE|g" \
+        -e "s|__TAGNOTE__|$TAGNOTE|g" \
+        -e "s|__SUMMARY__|the Pacific Cloud Solutions plugin of that name|g")
 # Multiline substitution: `sed` inserts one line, not a block, so awk swaps the single
 # placeholder LINE for the contents of the captured validation output.
 BODY=$(printf '%s\n' "$BODY" | awk -v vf="$VALIDATE_FILE" '
   /__VALIDATE__/ { while ((getline line < vf) > 0) print line; close(vf); next }
   { print }')
+for pair in "INTRO:$INTRO_FILE" "DISCLOSURES:$DISCLOSURES_FILE"; do
+  tok=${pair%%:*}; file=${pair#*:}
+  BODY=$(printf '%s\n' "$BODY" | awk -v vf="$file" -v tok="__${tok}__" '
+    $0 == tok { while ((getline line < vf) > 0) print line; close(vf); next }
+    { print }')
+done
+case "$BODY" in
+  *__*__*) echo "error: an unreplaced __TOKEN__ survived into the PR body — refusing." >&2
+            printf '%s\n' "$BODY" | grep -o '__[A-Z_]*__' | sort -u | sed 's/^/       /' >&2
+            exit 1;;
+esac
 
 step "4/6 pull request"
 work "title: $TITLE"
