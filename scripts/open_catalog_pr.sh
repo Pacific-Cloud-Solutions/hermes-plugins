@@ -124,13 +124,13 @@ TITLE="plugin-catalog: add $NAME"
 read -r -d '' BODY <<'BODYEOF' || true
 ## What does this PR do?
 
-Adds one catalog entry, `plugin-catalog/__NAME__.yaml`, for __SUMMARY__
+Adds one catalog entry, `plugin-catalog/__NAME__.yaml`.
 
 __INTRO__
 
 |  |  |
 | --- | --- |
-| **repo** | [__PLUGIN_REPO__](__PLUGIN_REPO__) |
+| **repo** | [__PLUGIN_REPO__](__PLUGIN_URL__) |
 | **pinned sha** | `__SHA__` |
 | **release** | __RELEASE__ |
 | **tier / category** | __TIER__ / __CATEGORY__ |
@@ -147,7 +147,7 @@ __DISCLOSURES__
 ## How to Test
 
 1. `python3 scripts/validate_plugin_catalog.py plugin-catalog/__NAME__.yaml` — `OK: 1 file(s) valid`.
-2. Clone `__PLUGIN_REPO__` and check out `__SHA__`.
+2. Clone `__PLUGIN_URL__` and check out `__SHA__`.
 3. `hermes plugins validate` on that checkout — passed here (manifest, capability probe, security scan __VERDICT__, declared tools match `register()`).
 
 Verified locally before filing:
@@ -236,9 +236,11 @@ if [ ! -f "$PROSE" ]; then
 else
   INTRO_FILE=/tmp/.prose-intro.$$
   DISCLOSURES_FILE=/tmp/.prose-disc.$$
-  awk '/^## INTRO/{f=1;next} /^## DISCLOSURES/{f=0} f' "$PROSE" |
-    awk 'NF {blank=0; print} !NF {blank++; if (blank==1) print}' > "$INTRO_FILE"
-  awk '/^## DISCLOSURES/{f=1;next} /^## [A-Z]/{f=0} f' "$PROSE" > "$DISCLOSURES_FILE"
+  # Defer blank lines so a run of them collapses to one and TRAILING blanks vanish.
+  # (BSD awk/sed have no `\s`; and GNU sed's `{/./!d}` syntax is rejected outright.)
+  squash() { awk '{ if (NF) { while (p > 0) { print ""; p-- } p = 0; print } else p++ }'; }
+  awk '/^## INTRO/{f=1;next} /^## DISCLOSURES/{f=0} f' "$PROSE" | squash > "$INTRO_FILE"
+  awk '/^## DISCLOSURES/{f=1;next} /^## [A-Z]/{f=0} f' "$PROSE" | squash > "$DISCLOSURES_FILE"
   work "prose read from $(basename "$PROSE") ($(grep -c . "$INTRO_FILE") intro line(s), $(grep -c . "$DISCLOSURES_FILE") disclosure line(s))"
 fi
 trap 'rm -f "$INTRO_FILE" "$DISCLOSURES_FILE" "$VALIDATE_FILE" 2>/dev/null' EXIT
@@ -255,7 +257,7 @@ BODY=$(printf '%s\n' "$BODY" \
         -e "s|__VERDICT__|$VERDICT|g" \
         -e "s|__RELEASE__|$RELEASE|g" \
         -e "s|__TAGNOTE__|$TAGNOTE|g" \
-        -e "s|__SUMMARY__|the Pacific Cloud Solutions plugin of that name|g")
+        -e "s|__PLUGIN_URL__|https://github.com/$PLUGIN_REPO|g")
 # Multiline substitution: `sed` inserts one line, not a block, so awk swaps the single
 # placeholder LINE for the contents of the captured validation output.
 BODY=$(printf '%s\n' "$BODY" | awk -v vf="$VALIDATE_FILE" '
