@@ -235,6 +235,19 @@ def main() -> int:
     section("plugin gates")
     check(str(REPO_ROOT) in str(plugin_dir), "plugin dir is inside the repo",
           str(plugin_dir))
+
+    # A bundled contract is a copy, and copies drift. A plugin that carries `_contract/`
+    # must carry core's EXACT bytes: the bundle includes the prompt-section text frozen
+    # into every session prompt and the redaction patterns, so a hand-edit there changes
+    # host-level behaviour without touching core at all.
+    vendor = REPO_ROOT / "scripts" / "vendor_contract.py"
+    if vendor.is_file():
+        out = run([sys.executable, str(vendor), "--check"])
+        blob = (out.stdout + out.stderr).strip()
+        tail = "\n         ".join(blob.splitlines()[-3:])
+        check(out.returncode == 0, "bundled contract matches core exactly (no drift)", tail)
+    else:
+        print(f"  [note] {vendor} is absent — cannot verify bundled-copy drift")
     if plugin_dir.is_dir():
         for sub, label in (("doctor", "runtime contract"), ("validate", "admission gate")):
             out = run([args.hermes, "plugins", sub, str(plugin_dir)])
