@@ -238,7 +238,8 @@ else
   DISCLOSURES_FILE=/tmp/.prose-disc.$$
   # Defer blank lines so a run of them collapses to one and TRAILING blanks vanish.
   # (BSD awk/sed have no `\s`; and GNU sed's `{/./!d}` syntax is rejected outright.)
-  squash() { awk '{ if (NF) { while (p > 0) { print ""; p-- } p = 0; print } else p++ }'; }
+  squash() { awk '{ if (NF) { while (p > 0) { print ""; p-- } p = 0; s = 1; print }
+                     else if (s) p++ }'; }
   awk '/^## INTRO/{f=1;next} /^## DISCLOSURES/{f=0} f' "$PROSE" | squash > "$INTRO_FILE"
   awk '/^## DISCLOSURES/{f=1;next} /^## [A-Z]/{f=0} f' "$PROSE" | squash > "$DISCLOSURES_FILE"
   work "prose read from $(basename "$PROSE") ($(grep -c . "$INTRO_FILE") intro line(s), $(grep -c . "$DISCLOSURES_FILE") disclosure line(s))"
