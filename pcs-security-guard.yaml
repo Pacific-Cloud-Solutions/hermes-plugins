@@ -9,19 +9,19 @@ homepage: https://github.com/Pacific-Cloud-Solutions/hermes-plugins
 plugins:
   - repo: Pacific-Cloud-Solutions/hermes-plugins
     subdir: plugins/pcs-security-core
-    ref: 882800fcb2f4169a06181d9939fd727d2a72e52d
+    ref: a95f346e48a479658624fad66c7c61d6d02582e8
   - repo: Pacific-Cloud-Solutions/hermes-plugins
     subdir: plugins/pcs-security-tls-posture
-    ref: 882800fcb2f4169a06181d9939fd727d2a72e52d
+    ref: a95f346e48a479658624fad66c7c61d6d02582e8
   - repo: Pacific-Cloud-Solutions/hermes-plugins
     subdir: plugins/pcs-security-log-triage
-    ref: 882800fcb2f4169a06181d9939fd727d2a72e52d
+    ref: a95f346e48a479658624fad66c7c61d6d02582e8
   - repo: Pacific-Cloud-Solutions/hermes-plugins
     subdir: plugins/pcs-security-network-exposure
-    ref: 882800fcb2f4169a06181d9939fd727d2a72e52d
+    ref: a95f346e48a479658624fad66c7c61d6d02582e8
   - repo: Pacific-Cloud-Solutions/hermes-plugins
     subdir: plugins/pcs-security-web-headers
-    ref: 882800fcb2f4169a06181d9939fd727d2a72e52d
+    ref: a95f346e48a479658624fad66c7c61d6d02582e8
 
 # pcs-security-auth-posture is deliberately NOT listed yet.
 #
