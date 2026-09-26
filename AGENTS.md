@@ -21,6 +21,10 @@ plugins/<id>/
 └── desktop/plugin.js   only if it ships a Desktop UI surface
 ```
 
+`catalog/<id>.prose.md` sits beside `plugins/`: it holds the submission's `## INTRO` and
+`## DISCLOSURES` — the text `scripts/open_catalog_pr.sh` drops into the PR body and cannot
+write itself. It is tracked here on purpose; see "Publishing a plugin" step 4.
+
 ## Authoring contract
 
 - Handlers are `def handler(args: dict, **kwargs) -> str` and **always return a JSON string** —
@@ -93,7 +97,13 @@ SHA=$(git rev-parse HEAD)
 # 3. preflight the whole bundle — entry, pack and plugin must agree. Read-only.
 "$PY" scripts/preflight_catalog.py /tmp/<id>.yaml        # exit 1 = do not open the PR
 
-# 4. preview the PR (no network writes), then open it
+# 4. write the submission prose at catalog/<id>.prose.md and commit it. The helper reads
+#    '## INTRO' and '## DISCLOSURES' from there and cannot write them itself: what the
+#    plugin does, and what it does not, is the substance a reviewer judges. It used to be
+#    written beside the entry inside the scratch clone, which --open-pr deletes — so it
+#    survived only in the PR body it produced, and the next SHA-bump PR read '(missing)'.
+
+# 5. preview the PR (no network writes), then open it
 scripts/open_catalog_pr.sh /tmp/<id>.yaml <id>
 scripts/open_catalog_pr.sh /tmp/<id>.yaml <id> --open-pr      # needs sign-off
 ```

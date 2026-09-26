@@ -116,6 +116,7 @@ signal lands upstream — **do not publish it before that dependency lands.**
 ```
 hermes-plugins/
 ├── plugins/<id>/          One plugin per directory — plugin.yaml, __init__.py, desc, health
+├── catalog/               Submission prose — `## INTRO` / `## DISCLOSURES` the catalog PR is built from
 ├── scripts/               catalog entry generator, catalog PR helper, hero asset builder
 ├── docs/                  hero.png (lossless master), hero.webp (README), hero-2x1.webp (catalog card)
 ├── pcs-security-guard.yaml  Pack pins, one `ref:` per plugin — exact SHAs only

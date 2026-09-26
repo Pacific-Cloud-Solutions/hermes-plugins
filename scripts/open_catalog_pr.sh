@@ -248,32 +248,55 @@ else
   TAGNOTE="**private** and untagged — the installer clones this repo anonymously"
 fi
 
-VERDICT=$(grep -o 'security scan — [a-z]*' "$VALIDATE_FILE" 2>/dev/null | head -1 | sed 's/.*— //')
+# `|| true`: grep exits 1 when the phrase is absent, and this script runs under `set -o
+# pipefail` — so without it the pipeline's failure aborts the run right here. That made the
+# "validation could not be run" branch above dead code: it deliberately writes a file with
+# no verdict in it, and the script then died before it could say so in the body.
+VERDICT=$(grep -o 'security scan — [a-z]*' "$VALIDATE_FILE" 2>/dev/null | head -1 | sed 's/.*— //' || true)
 if [ "$VERDICT" = "safe" ]; then VERDICT="**safe**"; else VERDICT="${VERDICT:-unknown}"; fi
 
 # --- prose, which a generator must NOT invent --------------------------------
 # `__INTRO__` and `__DISCLOSURES__` are the substance of the submission: what the plugin
 # does and what it does not. A script cannot write those honestly, so they come from a
-# file beside the entry: <entry-without-.yaml>.prose.md, holding two fenced sections:
+# file holding two fenced sections:
 #
 #   ## INTRO
 #   ...
 #   ## DISCLOSURES
 #   - **Topic.** ...
-PROSE="${ENTRY%.yaml}.prose.md"
-if [ ! -f "$PROSE" ]; then
+#
+# Lookup order — first hit wins:
+#   1. $PROSE_FILE            explicit override, for a one-off
+#   2. catalog/<id>.prose.md  tracked in this repo; the normal case
+#   3. beside the entry       where this started, and a trap: the entry usually lives in
+#                             .catalog-work/, which is gitignored AND rm -rf'd by every
+#                             --open-pr run — prose written there is destroyed by the next
+#                             run and survives only in the PR body it produced.
+PROSE=""
+for candidate in "${PROSE_FILE:-}" "$REPO_ROOT/catalog/$NAME.prose.md" "${ENTRY%.yaml}.prose.md"; do
+  if [ -n "$candidate" ] && [ -f "$candidate" ]; then PROSE="$candidate"; break; fi
+done
+if [ -z "$PROSE" ]; then
   INTRO_FILE=/dev/null
   DISCLOSURES_FILE=/dev/null
   if [ "$OPEN_PR" -eq 1 ]; then
-    echo "error: no prose file at $PROSE" >&2
+    echo "error: no prose file found. Looked at:" >&2
+    if [ -n "${PROSE_FILE:-}" ]; then
+      echo "         \$PROSE_FILE  ($PROSE_FILE — set, but not a readable file)" >&2
+    else
+      echo "         \$PROSE_FILE  (unset)" >&2
+    fi
+    echo "         $REPO_ROOT/catalog/$NAME.prose.md" >&2
+    echo "         ${ENTRY%.yaml}.prose.md" >&2
     echo "       'What does this PR do?' and 'Disclosures' are the substance of a catalog" >&2
-    echo "       submission and must be written, not generated. Create $PROSE with an" >&2
-    echo "       '## INTRO' section and a '## DISCLOSURES' section, then re-run." >&2
+    echo "       submission and must be written, not generated. Put the file at" >&2
+    echo "       catalog/$NAME.prose.md with an '## INTRO' section and a" >&2
+    echo "       '## DISCLOSURES' section, then re-run." >&2
     exit 1
   fi
-  work "WARNING: no prose file at $PROSE — INTRO and DISCLOSURES will read (missing)"
-  printf '(missing — write %s)\n' "$PROSE" > /tmp/.prose-intro.$$
-  printf '(missing — write %s)\n' "$PROSE" > /tmp/.prose-disc.$$
+  work "WARNING: no prose file — INTRO and DISCLOSURES will read (missing)"
+  printf '(missing — write catalog/%s.prose.md)\n' "$NAME" > /tmp/.prose-intro.$$
+  printf '(missing — write catalog/%s.prose.md)\n' "$NAME" > /tmp/.prose-disc.$$
   INTRO_FILE=/tmp/.prose-intro.$$
   DISCLOSURES_FILE=/tmp/.prose-disc.$$
 else
