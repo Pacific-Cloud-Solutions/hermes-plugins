@@ -165,8 +165,16 @@ def verify(text: str, name: str, sha: str) -> None:
     try:
         from hermes_cli.plugin_catalog import entry_from_mapping  # noqa: PLC0415
     except Exception as exc:
-        print(f"warn: could not import the catalog loader ({exc}); skipping --verify", file=sys.stderr)
-        return
+        # --verify was explicitly requested, so being unable to verify is a FAILURE, not a
+        # warning. Warn-and-return exited 0 and left the operator believing an unverified
+        # entry had been round-tripped; --verify is the only check this script does that the
+        # hand-written field mirrors cannot fake, so it must never degrade silently.
+        sys.exit(
+            f"error: --verify was requested but the catalog loader is not importable ({exc}).\n"
+            f"       Put the Hermes install on the path, e.g.\n"
+            f"         PYTHONPATH=/path/to/hermes-agent \"$PY\" scripts/catalog_entry.py ... --verify\n"
+            f"       or drop --verify and round-trip the entry yourself — do not assume it ran."
+        )
 
     data = _load_yaml().safe_load(text)
     entry = entry_from_mapping(data, f"<generated {name}>")

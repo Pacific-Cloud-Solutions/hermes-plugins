@@ -72,6 +72,11 @@ git add plugins/<id> && git commit -m "feat(<id>): ..." && git push
 # *and* imports `hermes_cli.plugin_catalog`, so a plain python3 fails twice over —
 # "PyYAML is required", exit 1, before it ever reaches the catalog loader.
 PY="$HOME/.hermes/hermes-agent/venv/bin/python"     # adjust to your Hermes install
+# The venv python ships PyYAML but does NOT put `hermes_cli` on sys.path, so `--verify`
+# needs the Hermes install root on PYTHONPATH. Without it the script now exits 1 with
+# "loader is not importable" — it used to only warn, which meant an unverified entry
+# could be generated and then believed.
+export PYTHONPATH="$HOME/.hermes/hermes-agent"
 SHA=$(git rev-parse HEAD)
 "$PY" scripts/catalog_entry.py --plugin plugins/<id> --sha "$SHA" \
     --category tools --maintainer Pacific-Cloud-Solutions \
