@@ -165,18 +165,37 @@ WORKDIR=".catalog-work/hermes-agent"
 if gh api "repos/$FORK_OWNER/hermes-agent" >/dev/null 2>&1; then
   work "fork already exists"
 else
-  gh api -X POST "repos/$UPSTREAM/forks" >/dev/null
-  work "fork created"
+  # `gh` forks into the AUTHENTICATING USER unless `organization` is given, whatever
+  # $FORK_OWNER says. Without this the fork lands under the personal account, the
+  # readiness probe below never finds it, and the clone fails on a repo that does not
+  # exist — which the suppressed error made invisible.
+  if ! gh api -X POST "repos/$UPSTREAM/forks" -f organization="$FORK_OWNER" >/dev/null; then
+    echo "error: could not fork $UPSTREAM into $FORK_OWNER." >&2
+    echo "       Check that the authenticated account may create repos in that org" >&2
+    echo "       (gh auth status), or point FORK_OWNER at a personal account." >&2
+    exit 1
+  fi
+  work "fork created in $FORK_OWNER"
+  _ready=""
   for _ in $(seq 1 20); do
-    gh api "repos/$FORK_OWNER/hermes-agent" >/dev/null 2>&1 && break
+    if gh api "repos/$FORK_OWNER/hermes-agent" >/dev/null 2>&1; then _ready=1; break; fi
     sleep 3
   done
+  if [ -z "$_ready" ]; then
+    echo "error: the fork never appeared at $FORK_OWNER/hermes-agent after 60s." >&2
+    echo "       GitHub creates the repo record before it is clonable; if it is still" >&2
+    echo "       absent, check where it actually landed." >&2
+    exit 1
+  fi
 fi
 
 rm -rf "$WORKDIR"
 mkdir -p "$(dirname "$WORKDIR")"
-git clone --depth 1 --no-single-branch \
-  "https://github.com/$FORK_OWNER/hermes-agent.git" "$WORKDIR" >/dev/null 2>&1
+if ! git clone --depth 1 --no-single-branch \
+     "https://github.com/$FORK_OWNER/hermes-agent.git" "$WORKDIR" >/dev/null 2>&1; then
+  echo "error: could not clone $FORK_OWNER/hermes-agent — the fork is not clonable." >&2
+  exit 1
+fi
 git -C "$WORKDIR" remote add upstream "https://github.com/$UPSTREAM.git" 2>/dev/null || true
 git -C "$WORKDIR" fetch --depth 1 upstream "$BASE_BRANCH" >/dev/null 2>&1
 git -C "$WORKDIR" checkout -B "$BRANCH" "upstream/$BASE_BRANCH" >/dev/null 2>&1
