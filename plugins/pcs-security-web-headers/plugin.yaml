@@ -1,5 +1,5 @@
 name: pcs-security-web-headers
-version: 0.1.0
+version: 0.2.0
 description: Read-only audit of HTTP security headers declared in local web server configuration — HSTS, CSP, frame and sniffing protection, and version disclosure
 author: Pacific Cloud Solutions
 license: MIT
@@ -16,14 +16,17 @@ tags:
 # that the install scanner treats as hostile vocabulary — it reads web server
 # configuration and reports on the headers it declares.
 
-# pcs-security-core is imported lazily, on first use. Without it the tool still
-# REGISTERS but REFUSES TO RUN — no report is ever produced outside the taint
-# model. It is deliberately not imported at module scope, because `hermes plugins
-# doctor` and `hermes plugins validate` run a plugin in ISOLATION, where no
-# sibling directory exists. See bootstrap.py and README.md.
-requires_plugins:
-  - id: pcs-security-core
-    version_range: ">=0.1.0"
+# This plugin BUNDLES the shared contract in `_contract/` (byte-identical copies of
+# pcs-security-core's four modules, refreshed by scripts/vendor_contract.py and guarded by
+# a drift test). It therefore declares NO `requires_plugins`: a catalog entry installs
+# exactly one plugin, so a plugin that needed a sibling would install onto a host that has
+# none and fail at first use. The bundle is loaded only when the shared pcs-security-core
+# plugin is absent; when it is present, core stays authoritative and owns the host-level
+# registrations (see __init__.py).
+#
+# The contract is imported lazily, on first tool use: `hermes plugins doctor` and
+# `hermes plugins validate` run a plugin in ISOLATION, and `_contract/` travels with the
+# plugin, so both gates exercise the bundled copy.
 
 provides_tools:
   - web_headers

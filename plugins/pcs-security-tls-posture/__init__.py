@@ -53,13 +53,13 @@ def _ensure_host_registrations(ctx) -> None:
             if has_plugin("pcs-security-core"):
                 return
         except Exception as exc:  # noqa: BLE001
-            logger.debug("pcs-security-tls-posture: has_plugin probe failed: %s", exc)
+            logger.debug("%s: has_plugin probe failed: %s", __name__, exc)
 
     try:
         from . import _contract
         _contract.register(ctx)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("pcs-security-tls-posture: host registration failed: %s", exc)
+        logger.warning("%s: host registration failed: %s", __name__, exc)
 
 
 def register(ctx) -> None:  # noqa: ANN001 — PluginContext, typed by the SDK
