@@ -18,9 +18,14 @@ hardcoded import wrong:
 So this shim resolves by *filesystem*, which is the layout the install model
 actually guarantees, and falls back to the loader namespace only as a shortcut.
 
-If pcs-security-core cannot be found, it raises with the paths it tried — a
-dependent plugin must fail loudly, because a security tool that silently runs
-without the taint model is exactly the failure this suite exists to prevent.
+The contract is BUNDLED with this plugin (``_contract/``) as well as obtainable
+from the shared ``pcs-security-core`` plugin. The bundle is what makes a
+standalone install work: a catalog entry installs exactly one plugin, so it
+cannot depend on a sibling the catalog has no entry for. When the bundle is
+present — always, in a correctly packaged plugin — the failure mode this shim
+originally guarded against ("a security tool silently running without the taint
+model") is structurally impossible rather than merely detected. The raise below
+now means only one thing: the plugin was packaged wrong.
 """
 from __future__ import annotations
 
@@ -34,14 +39,23 @@ REQUIRED_API = 1
 
 
 def _candidate_dirs():
-    """Where pcs-security-core can legitimately live, in preference order."""
-    # In-repo: plugins/<dependent>/bootstrap.py -> plugins/pcs-security-core
+    """Where the contract can legitimately live, in preference order.
+
+    The shared ``pcs-security-core`` plugin comes FIRST, so a suite/pack install keeps
+    one contract instance and core's host-level registrations stay authoritative. The
+    bundled copy is LAST and is always present, which is what makes this plugin
+    installable on its own: a catalog entry installs exactly one plugin, so it cannot
+    depend on a sibling the catalog has no entry for.
+    """
     here = Path(__file__).resolve()
+    # In-repo / suite install: plugins/<dependent>/bootstrap.py -> plugins/pcs-security-core
     yield here.parent.parent / "pcs-security-core"
     # Installed alongside its siblings
     home = os.environ.get("HERMES_HOME")
     if home:
         yield Path(home) / "plugins" / "pcs-security-core"
+    # Bundled inside this plugin — the standalone path. Always present.
+    yield here.parent / "_contract"
 
 
 def _already_loaded():
@@ -83,6 +97,8 @@ def load():
         return module
 
     raise ImportError(
-        "pcs-security-core is required but was not found. Install it alongside this plugin "
-        f"(`hermes plugins install pcs-security-core`). Looked in: {', '.join(tried)}"
+        "the bundled contract is missing from this plugin — "
+        f"`_contract/` should sit beside bootstrap.py. Looked in: {', '.join(tried)}. "
+        "This is a packaging fault, not a missing dependency: reinstall the plugin, or "
+        "restore the copy with scripts/vendor_contract.py."
     )

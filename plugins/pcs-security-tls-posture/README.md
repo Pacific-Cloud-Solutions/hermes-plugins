@@ -2,9 +2,10 @@
 
 Read-only audit of local TLS posture. One tool: `tls_posture`.
 
-Part of the Pacific Cloud Solutions security suite. Requires
-[`pcs-security-core`](../pcs-security-core), which supplies the finding contract and the
-provenance/taint model.
+Part of the Pacific Cloud Solutions security suite. **Self-contained**: it bundles the
+suite's finding contract and provenance/taint model in `_contract/`, so this one plugin
+installs and runs on its own. The shared [`pcs-security-core`](../pcs-security-core)
+plugin is used automatically when it is present, and is not required.
 
 **This plugin installs clean.** Unlike [`pcs-security-auth-posture`](../pcs-security-auth-posture),
 it names no artifact the install scanner treats as hostile vocabulary, so it needs
@@ -30,20 +31,20 @@ no declared-audit-intent signal and no special handling at admission.
 ## Install
 
 ```bash
-hermes plugins install pcs-security-core
 hermes plugins install pcs-security-tls-posture
 ```
 
-If `pcs-security-core` is missing the tool still **registers** — but **refuses to
-run**, returning an explicit error instead of a report. No report is ever
-produced outside the taint model.
+That is the whole install. The contract the tool returns findings in travels inside the
+plugin, so there is no dependency to install first and nothing to install in order.
 
-Registration is deliberately tolerant for a specific reason: `hermes plugins
-doctor` and `hermes plugins validate` copy a plugin into a temp directory and run
-it **in isolation**, with no sibling `pcs-security-core/` on disk. A hard import at
-module scope makes both gates fail. The property that matters is "no *report*
-without the contract", which the handler enforces — not "the module cannot be
-imported".
+If you install [`pcs-security-core`](../pcs-security-core) alongside it — which the
+[pack](../../pcs-security-guard.yaml) does — the shared copy is used instead of the
+bundled one, so the whole suite shares a single contract instance and one set of
+host-level registrations. Either way the report is identical: `scripts/vendor_contract.py`
+copies core's modules byte-for-byte into `_contract/`, and `--check` fails the build if
+the two ever diverge. Bundled `__init__.py` included, because it carries the
+prompt-section text and the redaction patterns — a hand-edit there would change
+host-level behaviour without touching core.
 
 ## Usage
 
