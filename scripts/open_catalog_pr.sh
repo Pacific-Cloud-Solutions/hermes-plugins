@@ -177,7 +177,7 @@ No issue. Catalog submissions are a PR that adds one entry file. I maintain
 ## Checklist
 
 - [x]  I am the owner/maintainer of the submitted plugin repository
-- [ ]  The plugin repository is public and tagged — __TAGNOTE__
+__PUB_BOX__  The plugin repository is public and tagged — __TAGNOTE__
 - [x]  The pinned SHA is reachable on `main`
 - [x]  The package contains no self-update logic; updates ship only as SHA-bump PRs
 - [x]  Declared capabilities match `plugin.yaml` and what `register()` registers at the pin
@@ -195,14 +195,57 @@ NENV=$(awk '/^ *requires_env:/{f=1;next} /^[a-z]/{f=0} f && /^ *- /{c++} END{pri
 CAPS="${NTOOLS} tool(s), ${NHOOKS} hook(s)"
 if [ "$NENV" -gt 0 ]; then CAPS="$CAPS, requires $NENV env var(s)"; else CAPS="$CAPS, no requires_env"; fi
 
-if [ -n "$(git tag -l | head -1)" ]; then
-  RELEASE="tagged — \`$(git tag -l | head -1)\`"
-  TAGNOTE="yes"
-else
-  PLUGIN_VERSION=$(sed -n 's/^version:[[:space:]]*//p' \
-    "$REPO_ROOT/plugins/$NAME/plugin.yaml" 2>/dev/null | head -1 | tr -d '"')
+# --- the public/tagged checklist line is DERIVED, never asserted -------------------
+# The box is ticked from two checked facts, not from a human's say-so. Three ways the
+# first draft lied: it hardcoded the box unchecked; it read the tag with
+# `git tag -l | head -1` — the WHOLE repo's first tag, so with several plugins in one
+# repo it names a different plugin's tag; and it never asked whether the tag was pushed,
+# which is the only thing the reviewer the box is written for can actually see. So:
+# "public" comes from the repo record, and the tag must be scoped to THIS plugin AND
+# point at the pinned commit.
+IS_PUBLIC=$(gh api "repos/$PLUGIN_REPO" 2>/dev/null \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin).get("private", True) is False)' \
+  2>/dev/null || echo False)
+# The remote's tag list, not `git tag -l`: a local-only tag is invisible upstream, and
+# this endpoint dereferences annotated tags, so `commit.sha` is the commit the tag
+# ultimately points at — the same commit the entry pins.
+TAG=$(gh api "repos/$PLUGIN_REPO/tags?per_page=100" 2>/dev/null \
+  | python3 -c '
+import json, sys
+name, sha = sys.argv[1], sys.argv[2]
+try:
+    tags = json.load(sys.stdin)
+except Exception:
+    tags = []
+for t in tags:
+    if t.get("name", "").startswith(name + "-v") and t.get("commit", {}).get("sha") == sha:
+        print(t["name"])
+        break
+' "$NAME" "$SHA")
+PLUGIN_VERSION=$(sed -n 's/^version:[[:space:]]*//p' \
+  "$REPO_ROOT/plugins/$NAME/plugin.yaml" 2>/dev/null | head -1 | tr -d '"')
+case "$TAG" in
+  ""|"$NAME-v$PLUGIN_VERSION") ;;
+  *) echo "warning: tag $TAG does not match plugin.yaml version $PLUGIN_VERSION at the pin." >&2
+     echo "         The checklist line names the tag, so keep the two equal." >&2 ;;
+esac
+
+if [ -n "$TAG" ] && [ "$IS_PUBLIC" = "True" ]; then
+  RELEASE="tagged — \`$TAG\`"
+  PUB_BOX="- [x]"
+  TAGNOTE="public, tagged \`$TAG\` at the pinned commit"
+elif [ -n "$TAG" ]; then
+  RELEASE="tagged — \`$TAG\`"
+  PUB_BOX="- [ ]"
+  TAGNOTE="tagged \`$TAG\`, but the repository is private — the installer clones it anonymously"
+elif [ "$IS_PUBLIC" = "True" ]; then
   RELEASE="no tag — \`plugin.yaml\` \`version\` reads \`${PLUGIN_VERSION:-unknown}\`"
+  PUB_BOX="- [ ]"
   TAGNOTE="public, **untagged**; the pin is the release"
+else
+  RELEASE="no tag — \`plugin.yaml\` \`version\` reads \`${PLUGIN_VERSION:-unknown}\`"
+  PUB_BOX="- [ ]"
+  TAGNOTE="**private** and untagged — the installer clones this repo anonymously"
 fi
 
 VERDICT=$(grep -o 'security scan — [a-z]*' "$VALIDATE_FILE" 2>/dev/null | head -1 | sed 's/.*— //')
@@ -257,6 +300,7 @@ BODY=$(printf '%s\n' "$BODY" \
         -e "s|__CAPS__|$CAPS|g" \
         -e "s|__VERDICT__|$VERDICT|g" \
         -e "s|__RELEASE__|$RELEASE|g" \
+        -e "s|__PUB_BOX__|$PUB_BOX|g" \
         -e "s|__TAGNOTE__|$TAGNOTE|g" \
         -e "s|__PLUGIN_URL__|https://github.com/$PLUGIN_REPO|g")
 # Multiline substitution: `sed` inserts one line, not a block, so awk swaps the single

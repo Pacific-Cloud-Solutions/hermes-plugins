@@ -66,6 +66,13 @@ install path — `hermes plugins install <name>` clones this repo at the pinned 
 # 1. push the plugin here first — the pin must resolve to a pushed commit
 git add plugins/<id> && git commit -m "feat(<id>): ..." && git push
 
+# 1b. tag that same commit. The submission's "public and tagged" checklist line is DERIVED
+#     from the REMOTE tag list, so a local-only tag leaves the box unticked. The tag must
+#     point at the pinned commit and carry the same version plugin.yaml reads at it.
+SHA=$(git rev-parse HEAD)
+git tag -a "<id>-v<version>" "$SHA" -m "<id> <version>"
+git push origin "refs/tags/<id>-v<version>"
+
 # 2. generate the entry from the plugin's own manifest, and prove the loader accepts it
 #
 # Run this with HERMES's interpreter, never a bare `python3`. The script needs PyYAML
@@ -162,6 +169,15 @@ optimised PNG with a lower worst-case error, but a lossy file cannot be the sour
 
 `plugin.yaml`'s `version` is the human label; the SHA is the release. Bump the version and the SHA
 pin together, in the same commit, so the catalog card's label matches the code it installs.
+
+**Tags are the public release marker, and they are per plugin.** Name a tag `<id>-v<version>` —
+never a bare `v1.2.0`, because six plugins live in this one repo and version independently, so a
+repo-wide number cannot say which code it names. Annotate it (`git tag -a`), point it at the commit
+the catalog entry pins, and push it: the submission's "public and tagged" checklist line is read
+from the *remote* tag list, so a tag that exists only locally leaves the box unticked. On a SHA bump,
+tag the new commit in the same breath — a tag that lags the pin is worse than no tag, because it is a
+version claim that no longer describes what `hermes plugins install` hands you. Tags are labels only:
+the loader rejects a tag *as a pin* (rule 2), so an entry always carries the 40-hex SHA.
 
 ## Middleware
 
