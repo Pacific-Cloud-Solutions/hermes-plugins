@@ -236,7 +236,8 @@ if [ ! -f "$PROSE" ]; then
 else
   INTRO_FILE=/tmp/.prose-intro.$$
   DISCLOSURES_FILE=/tmp/.prose-disc.$$
-  awk '/^## INTRO/{f=1;next} /^## DISCLOSURES/{f=0} f' "$PROSE" | sed '/^[[:space:]]*$/{/./!d}' > "$INTRO_FILE"
+  awk '/^## INTRO/{f=1;next} /^## DISCLOSURES/{f=0} f' "$PROSE" |
+    awk 'NF {blank=0; print} !NF {blank++; if (blank==1) print}' > "$INTRO_FILE"
   awk '/^## DISCLOSURES/{f=1;next} /^## [A-Z]/{f=0} f' "$PROSE" > "$DISCLOSURES_FILE"
   work "prose read from $(basename "$PROSE") ($(grep -c . "$INTRO_FILE") intro line(s), $(grep -c . "$DISCLOSURES_FILE") disclosure line(s))"
 fi
