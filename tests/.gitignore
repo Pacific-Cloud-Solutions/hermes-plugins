@@ -1,0 +1,12 @@
+# Regenerated output and private key material. Neither belongs in git:
+#   *.key      — these are throwaway test keys, but a private key in a repository is a
+#                private key in a repository, and the admission scanner has a critical
+#                pattern for exactly that. The certificates are public; the keys are not.
+#   .build/    — scratch trees the harnesses write and rewrite on every run.
+#   *.crt      — NO: the certificates ARE committed, so the suite runs without openssl.
+#                `make_certs.sh` refreshes them when openssl is available.
+*.key
+*.csr
+*.srl
+.build/
+__pycache__/
