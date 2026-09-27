@@ -153,23 +153,26 @@ sign-off.** Develop, validate, and stage locally; the `--open-pr` step is a huma
 
 Upstream fails any PR whose commits carry an author email with no `contributors/emails/<email>`
 mapping (`.github/workflows/contributor-check.yml`), and the fix is a one-line file. A reviewer
-**cannot** push that file into our branch: GitHub offers "Allow edits from maintainers" only on
-forks in a **personal** account, and our submission fork is org-owned. That is exactly how
-PR #123278 ended — cherry-picked onto a salvage branch inside the upstream repo, our PR closed as
-superseded, because the two email mappings plus a description edit could not be pushed.
+**cannot** push that file into an org-owned fork's branch: GitHub offers "Allow edits from
+maintainers" only on forks in a **personal** account. That is exactly how PR #123278 ended —
+cherry-picked onto a salvage branch inside the upstream repo, our PR closed as superseded,
+because the two email mappings plus a description edit could not be pushed.
 
-So the mapping ships with the PR. `catalog/contributors.map` holds the deterministic ones
+So submissions go through a **personal fork** (`FORK_OWNER` defaults to `kingpin44`) with
+`maintainer_can_modify=true` on the PR: pre-empting chores is still the goal, but when one is
+needed a maintainer pushes three lines instead of rebuilding the PR. Attribution is unaffected —
+the entry's `repo:` and `maintainer:` carry the org, and admissions rule 5 is about who owns the
+*plugin* repo, not the fork. Override `FORK_OWNER` to an org only if a submission must originate
+from org-owned infrastructure, and then assume no chore can ever be pushed.
+
+The mapping still ships with the PR. `catalog/contributors.map` holds the deterministic ones
 (`<email> <github-login>` per line); `scripts/open_catalog_pr.sh` writes them into the branch and
 then runs upstream's own `scripts/audit_pr_attribution.py --fix` — which mirrors the CI gate, so
-it is the authority — aborting before the push if anything is left unmapped. Two consequences
-worth knowing:
-
-- The scratch clone's `origin` is the FORK, so the checker's `git merge-base origin/main HEAD`
-  range is meaningless until `origin/main` is repointed at the base the branch was cut from. It
-  is, in the script; a checker that ran over the fork's own commits would flag upstream authors.
-- `FORK_OWNER` is overridable. Submitting from a personal fork (`FORK_OWNER=kingpin44`) is the
-  only way to restore a maintainer's ability to push review chores — attribution does not depend
-  on it, since `repo:` and `maintainer:` in the entry carry the org either way.
+it is the authority — aborting before the push if anything is left unmapped. One consequence
+worth knowing: the scratch clone's `origin` is the FORK, so the checker's
+`git merge-base origin/main HEAD` range is meaningless until `origin/main` is repointed at the
+base the branch was cut from. It is, in the script; a checker left alone would run over the
+fork's own commits and flag upstream authors.
 
 ## Scripts must run on macOS bash 3.2
 

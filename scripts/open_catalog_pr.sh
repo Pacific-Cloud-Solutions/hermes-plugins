@@ -17,10 +17,15 @@ UPSTREAM="NousResearch/hermes-agent"
 # in a PERSONAL account, so an org-owned fork means a maintainer cannot push a review chore into
 # our branch: the chore turns into a salvage branch inside the upstream repo and our PR is closed
 # as superseded (exactly what happened to #123278 — contributor email maps plus a description
-# edit that could not be pushed). Override with FORK_OWNER=<login> to submit from a personal
-# fork, where maintainers CAN push. Attribution does not depend on this: the catalog entry's
-# `repo:` and `maintainer:` fields carry the org either way.
-FORK_OWNER="${FORK_OWNER:-Pacific-Cloud-Solutions}"
+# edit that could not be pushed). A personal fork is the lower-work choice for the MAINTAINER,
+# not just for us: pre-empting every chore is still the goal, but when one is needed they can
+# push three lines instead of rebuilding the PR.
+#
+# Attribution does not depend on this. The catalog entry's `repo:` and `maintainer:` fields carry
+# the org, and admissions rule 5 is about who owns the *plugin* repo, not the fork. Override with
+# FORK_OWNER=<org> only when a submission must originate from org-owned infrastructure — and then
+# accept that no chore can be pushed, so every one has to be pre-empted.
+FORK_OWNER="${FORK_OWNER:-kingpin44}"
 BASE_BRANCH="main"
 
 # The identity the entry commit is authored with. Upstream's contributor check reads this email
@@ -78,7 +83,10 @@ owner_is_org() {  # <login> → 0 when GitHub reports an Organization, 2 when it
 
 step "1/6 preflight"
 gh api user >/dev/null 2>&1 || { echo "error: gh is not authenticated (run: gh auth login)" >&2; exit 1; }
-work "gh authenticated: $(gh api user | python3 -c 'import json,sys; print(json.load(sys.stdin)["login"])')"
+# Captured rather than merely printed: the fork call below must know whether $FORK_OWNER is the
+# authenticated user (a personal fork) or an organization.
+AUTH_LOGIN=$(gh api user | python3 -c 'import json,sys; print(json.load(sys.stdin)["login"])')
+work "gh authenticated: $AUTH_LOGIN"
 gh api "repos/$UPSTREAM" >/dev/null 2>&1 || { echo "error: cannot read $UPSTREAM" >&2; exit 1; }
 work "upstream reachable: $UPSTREAM"
 
@@ -452,15 +460,16 @@ else
   # readiness probe below never finds it, and the clone fails on a repo that does not
   # exist — which the suppressed error made invisible.
   #
-  # The flag is only correct for an ORG owner: `organization=<a user login>` is an error.
-  # With FORK_OWNER set to a personal account (the way to get "Allow edits from
-  # maintainers"), the bare call is the one that lands in the right place. On an
-  # unanswered API call, assume org — that is this repo's default fork and the historical
-  # behavior, so an API hiccup cannot silently move the branch to a personal fork.
+  # The flag is only correct for an ORG owner: `organization=<a user login>` is an error, and
+  # FORK_OWNER now defaults to a personal account precisely so a maintainer can push review
+  # chores into the branch. When the API cannot say which kind it is, fall back to the one fact
+  # already in hand: whether FORK_OWNER is the authenticated user.
   FORK_ORG=""
   OWNER_KIND=0
   owner_is_org "$FORK_OWNER" || OWNER_KIND=$?
-  if [ "$OWNER_KIND" -eq 0 ] || [ "$OWNER_KIND" -eq 2 ]; then
+  if [ "$OWNER_KIND" -eq 0 ]; then
+    FORK_ORG="-f organization=$FORK_OWNER"
+  elif [ "$OWNER_KIND" -eq 2 ] && [ "$FORK_OWNER" != "$AUTH_LOGIN" ]; then
     FORK_ORG="-f organization=$FORK_OWNER"
   fi
   # shellcheck disable=SC2086  # deliberate word-splitting of the optional fixed flag
@@ -562,8 +571,13 @@ git -C "$WORKDIR" push -u origin "$BRANCH" >/dev/null 2>&1
 work "pushed to $FORK_OWNER/hermes-agent:$BRANCH"
 
 step "6/6 open the PR"
+# `maintainer_can_modify=true` is the checkbox a human ticks in the web UI, and it is the entire
+# reason to submit from a personal fork: without it a maintainer still cannot push a review chore
+# into the branch, so the chore becomes a salvage PR and ours is closed as superseded. Set it
+# explicitly rather than trusting a server-side default.
 PR_URL=$(gh api -X POST "repos/$UPSTREAM/pulls" \
   -f title="$TITLE" -f head="$FORK_OWNER:$BRANCH" -f base="$BASE_BRANCH" -f body="$BODY" \
+  -F maintainer_can_modify=true \
   | python3 -c 'import json,sys; print(json.load(sys.stdin).get("html_url",""))')
 [ -n "$PR_URL" ] || { echo "error: the PR was not created (check the API response above)" >&2; exit 1; }
 printf '\n    %s\n' "$PR_URL"
