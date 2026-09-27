@@ -36,9 +36,35 @@ ENTRY_KEYS = {
 }
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 NAME_RE = re.compile(r"^[a-z0-9_-]{1,64}$")
+PROSE_HEADING = "## DESCRIPTION"
 
 _failures: list[str] = []
 _checks = 0
+
+
+def prose_description(prose: Path) -> str:
+    """The prose file's `## DESCRIPTION` section, collapsed to one line, or "".
+
+    Same reader as scripts/catalog_entry.py, on purpose: the check below is that the entry was
+    generated WITH the prose file, and a second reader that disagreed would only prove the two
+    readers differ.
+    """
+    if not prose.is_file():
+        return ""
+    out: list[str] = []
+    seen = False
+    for raw in prose.read_text().splitlines():
+        if raw.strip() == PROSE_HEADING:
+            seen = True
+            continue
+        if not seen:
+            continue
+        if re.match(r"^## [A-Z]", raw):
+            break
+        if raw.startswith("#"):
+            continue
+        out.append(raw.strip())
+    return " ".join(" ".join(out).split())
 
 
 def check(ok: bool, label: str, detail: str = "") -> bool:
@@ -119,11 +145,24 @@ def main() -> int:
         check(reachable_on_origin(sha), "sha is pushed and reachable from origin",
               f"git branch -r --contains {sha[:12]}")
         # `plugins validate` reads the WORKING COPY, but the entry's claims describe the
-        # PINNED commit. Those are the same thing only when HEAD is the pin.
+        # PINNED commit. Those are the same thing only when the PLUGIN DIRECTORY holds the
+        # same code at both — which is stricter than it sounds and looser than HEAD == pin:
+        # catalog scripts, prose and tests land after a pin without touching the plugin, and
+        # requiring HEAD == pin failed every submission in that state for no reason.
         head = run(["git", "rev-parse", "HEAD"], cwd=REPO_ROOT).stdout.strip()
-        check(head == sha, "working HEAD == the pinned sha",
-              f"HEAD={head[:12]}… pin={sha[:12]}… — a validation report from a different "
-              f"commit describes code nobody installs")
+        subdir_for_pin = str(raw.get("subdir", ""))
+        if head == sha:
+            check(True, "working HEAD == the pinned sha", f"HEAD={head[:12]}…")
+        elif subdir_for_pin:
+            same_code = run(["git", "diff", "--quiet", f"{sha}:{subdir_for_pin}",
+                             f"{head}:{subdir_for_pin}"], cwd=REPO_ROOT)
+            check(same_code.returncode == 0,
+                  "the pinned sha holds the same plugin code as the working tree",
+                  f"HEAD={head[:12]}… pin={sha[:12]}… — git diff {sha[:12]}:{subdir_for_pin} "
+                  f"{head[:12]}:{subdir_for_pin} "
+                  + ("(identical, so a validation report from the working tree describes "
+                     "what the pin installs)" if same_code.returncode == 0 else
+                     "(DIFFERS: a report from the working tree describes code nobody installs)"))
         dirty = run(["git", "status", "--porcelain"], cwd=REPO_ROOT).stdout.strip()
         if dirty:
             n = len(dirty.splitlines())
@@ -140,6 +179,25 @@ def main() -> int:
              if not category_ok else "accepted"))
     check(raw.get("tier") in CATALOG_TIERS, "tier is one the loader accepts",
           f"tier={raw.get('tier')!r}")
+
+    # A reviewer asking for a disclosure line (which paths are read, no network, no
+    # subprocesses) had to hand-edit the merged entry, because the text existed nowhere in this
+    # repo — and the next regeneration reverted it, which is how the same chore reaches review
+    # twice. The description now has a home in the prose file; this is what proves the entry was
+    # generated with it.
+    prose = REPO_ROOT / "catalog" / f"{name}.prose.md"
+    want_desc = prose_description(prose)
+    got_desc = str(raw.get("description", "")).strip()
+    if want_desc:
+        check(got_desc == want_desc, "entry description == the prose file's ## DESCRIPTION",
+              "match" if got_desc == want_desc else
+              f"entry: {got_desc[:110]!r}\n         prose: {want_desc[:110]!r}\n"
+              f"         regenerate with scripts/catalog_entry.py — its ## DESCRIPTION section "
+              f"wins over plugin.yaml, so a hand-edit to the entry is reverted by the next run")
+    else:
+        print(f"  [note] {prose.name} carries no {PROSE_HEADING} — the entry falls back to "
+              f"plugin.yaml's one-liner,\n         so a disclosure a reviewer asks for has "
+              f"nowhere to live and gets re-added by hand every time.")
 
     entry = entry_from_mapping(raw, str(entry_path))
     check(entry is not None, "the REAL loader accepts the entry",
@@ -225,6 +283,18 @@ def main() -> int:
         if in_pack:
             print(f"  this plugin is in the pack — a pack install runs the scanner per plugin,"
                   f" so it must scan `safe` (checked below)")
+            # The drift that actually happened: the catalog entry moved to a reviewed sha while
+            # the pack pin stayed behind, so `hermes plugins install <name>` and a pack install
+            # of the same plugin resolved to different code. The per-pin checks above only
+            # compare a pin to HEAD, which both pins satisfy when the plugin itself is unchanged.
+            for item in plugins:
+                if str(item.get("subdir", "")).endswith(name):
+                    item_ref = str(item.get("ref", ""))
+                    check(item_ref == sha, "pack pin == the entry's sha",
+                          "match" if item_ref == sha else
+                          f"pack={item_ref[:12]}… entry={sha[:12]}… — a pack install would get "
+                          f"different code than `hermes plugins install {name}`. Re-pin "
+                          f"pcs-security-guard.yaml in the same commit as the entry.")
         else:
             print(f"  note: {name} is NOT in the pack. Only correct if it scans dangerous"
                   f" or is deliberately excluded — the pack file records the reason.")
