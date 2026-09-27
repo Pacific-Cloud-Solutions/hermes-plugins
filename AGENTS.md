@@ -21,9 +21,10 @@ plugins/<id>/
 └── desktop/plugin.js   only if it ships a Desktop UI surface
 ```
 
-`catalog/<id>.prose.md` sits beside `plugins/`: it holds the submission's `## INTRO` and
-`## DISCLOSURES` — the text `scripts/open_catalog_pr.sh` drops into the PR body and cannot
-write itself. It is tracked here on purpose; see "Publishing a plugin" step 4.
+`catalog/<id>.prose.md` sits beside `plugins/`: it holds the submission's `## INTRO`,
+`## DISCLOSURES` and `## DESCRIPTION` — the text `scripts/open_catalog_pr.sh` drops into the PR
+body and the generator uses as the entry's `description:`, neither of which a script can write
+honestly. It is tracked here on purpose; see "Publishing a plugin" step 4.
 
 ## Authoring contract
 
@@ -102,6 +103,10 @@ SHA=$(git rev-parse HEAD)
 #    plugin does, and what it does not, is the substance a reviewer judges. It used to be
 #    written beside the entry inside the scratch clone, which --open-pr deletes — so it
 #    survived only in the PR body it produced, and the next SHA-bump PR read '(missing)'.
+#    The optional LAST section, '## DESCRIPTION', becomes the entry's description: field
+#    (it wins over plugin.yaml's one-liner). Put the disclosure a reviewer asks for there —
+#    which paths are read, no network, no subprocesses — or the next regeneration reverts it.
+#    It must be last: the disclosures reader stops at the next '## [A-Z]' heading.
 
 # 5. preview the PR (no network writes), then open it
 scripts/open_catalog_pr.sh /tmp/<id>.yaml <id>
@@ -137,10 +142,34 @@ Rules that the PR is reviewed against, from upstream `plugin-catalog/README.md`:
 8. Desktop plugins stay inside the plugin SDK.
 
 After a merge, re-pin `pcs-security-guard.yaml` to the same SHA in this repo, so pack installs and
-catalog installs resolve to identical code.
+catalog installs resolve to identical code. Do it **per plugin**: the other plugins keep their own
+published pin until their own entries merge, and `scripts/preflight_catalog.py` now checks that
+equality for the plugin being submitted.
 
 **Never push to `NousResearch/hermes-agent` and never open an upstream PR without explicit
 sign-off.** Develop, validate, and stage locally; the `--open-pr` step is a human decision.
+
+## Contributor email mappings, and why the mapping ships with the PR
+
+Upstream fails any PR whose commits carry an author email with no `contributors/emails/<email>`
+mapping (`.github/workflows/contributor-check.yml`), and the fix is a one-line file. A reviewer
+**cannot** push that file into our branch: GitHub offers "Allow edits from maintainers" only on
+forks in a **personal** account, and our submission fork is org-owned. That is exactly how
+PR #123278 ended — cherry-picked onto a salvage branch inside the upstream repo, our PR closed as
+superseded, because the two email mappings plus a description edit could not be pushed.
+
+So the mapping ships with the PR. `catalog/contributors.map` holds the deterministic ones
+(`<email> <github-login>` per line); `scripts/open_catalog_pr.sh` writes them into the branch and
+then runs upstream's own `scripts/audit_pr_attribution.py --fix` — which mirrors the CI gate, so
+it is the authority — aborting before the push if anything is left unmapped. Two consequences
+worth knowing:
+
+- The scratch clone's `origin` is the FORK, so the checker's `git merge-base origin/main HEAD`
+  range is meaningless until `origin/main` is repointed at the base the branch was cut from. It
+  is, in the script; a checker that ran over the fork's own commits would flag upstream authors.
+- `FORK_OWNER` is overridable. Submitting from a personal fork (`FORK_OWNER=kingpin44`) is the
+  only way to restore a maintainer's ability to push review chores — attribution does not depend
+  on it, since `repo:` and `maintainer:` in the entry carry the org either way.
 
 ## Scripts must run on macOS bash 3.2
 
