@@ -23,6 +23,12 @@ Usage:
 
 `--verify` round-trips the generated YAML through the real catalog loader and fails if the
 loader would reject or silently drop any field. Use it in CI and before opening the PR.
+
+The `description:` is the manifest's one-liner, unless the submission prose file carries a
+`## DESCRIPTION` section — then that text wins. A reviewer asking for a disclosure line (which
+paths are read, no network, no subprocesses) had to edit the entry by hand, and the next
+regeneration reverted it, because the text existed nowhere in this repo. It lives in the prose
+file now, where it is tracked and diffable.
 """
 
 from __future__ import annotations
@@ -31,15 +37,65 @@ import argparse
 import re
 import sys
 from pathlib import Path
-from textwrap import dedent
 
 DEFAULT_REPO = "Pacific-Cloud-Solutions/hermes-plugins"
 DEFAULT_MAINTAINER = "Pacific-Cloud-Solutions"
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+PROSE_HEADING = "## DESCRIPTION"
 
 # Mirrors of the loader's constants. `--verify` cross-checks them against the live module so
 # they cannot drift silently on the machine that generates the entry.
 _NAME_RE = re.compile(r"^[a-z0-9_-]{1,64}$")
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+# A plain YAML scalar is only safe when it cannot be read as something else. `render()` writes
+# `key: value` verbatim, which is right for names and SHAs and wrong for prose: ` #` starts a
+# comment and `: ` ends the scalar, and in both cases the tail is dropped silently — the loader
+# accepts what is left, so a round-trip alone would not notice.
+_PLAIN_SAFE_RE = re.compile(r"^[A-Za-z0-9][^\t\n]*$")
+
+
+def yaml_scalar(value: str) -> str:
+    """The value as a YAML scalar: plain when unambiguous, double-quoted otherwise."""
+    if (
+        _PLAIN_SAFE_RE.match(value)
+        and ": " not in value
+        and " #" not in value
+        and not value.endswith((" ", ":"))
+    ):
+        return value
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+    return f'"{escaped}"'
+
+
+def read_prose_description(prose: Path) -> str:
+    """The `## DESCRIPTION` section of a submission prose file, collapsed to one line, or "".
+
+    The entry's `description:` used to be the manifest's one-liner and nothing else, so the
+    disclosure a reviewer asks for — which paths are read, no network, no subprocesses — was
+    added by hand to the merged entry, and the next regeneration silently reverted it because
+    the text existed nowhere in this repo. Human-authored text belongs in the prose file,
+    beside `## INTRO` and `## DISCLOSURES`; this is the third section, and it must be last so
+    the disclosures reader terminates on it.
+    """
+    if not prose.is_file():
+        return ""
+    out: list[str] = []
+    seen = False
+    for raw in prose.read_text().splitlines():
+        if raw.strip() == PROSE_HEADING:
+            seen = True
+            continue
+        if not seen:
+            continue
+        if re.match(r"^## [A-Z]", raw):
+            break
+        if raw.startswith("#"):
+            continue
+        out.append(raw.strip())
+    return " ".join(" ".join(out).split())
+
+
 _CATEGORIES = ("desktop", "memory", "platform", "web", "tools", "voice", "automation", "models", "general")
 _TIERS = ("official", "community")
 
@@ -97,6 +153,21 @@ def build_entry(args) -> tuple[str, dict]:
     if args.tier not in _TIERS:
         sys.exit(f"error: --tier must be one of {', '.join(_TIERS)} (got {args.tier!r})")
 
+    prose_desc = ""
+    if not args.no_prose:
+        prose_path = Path(args.prose) if args.prose else REPO_ROOT / "catalog" / f"{name}.prose.md"
+        prose_desc = read_prose_description(prose_path)
+        if prose_desc:
+            print(f"note: description taken from {PROSE_HEADING} in {prose_path}", file=sys.stderr)
+        elif args.prose:
+            print(f"warning: {prose_path} has no {PROSE_HEADING} section — falling back to "
+                  f"plugin.yaml's description", file=sys.stderr)
+
+    manifest_desc = str(manifest.get("description") or "").strip()
+    if not (prose_desc or manifest_desc):
+        sys.exit("error: no description — plugin.yaml has none and the prose file carries no "
+                 f"{PROSE_HEADING}")
+
     subdir = args.subdir or f"plugins/{plugin_dir.name}"
     capabilities = {
         "provides_tools": [str(x) for x in (manifest.get("provides_tools") or [])],
@@ -112,7 +183,7 @@ def build_entry(args) -> tuple[str, dict]:
         "repo": f"https://github.com/{args.repo}",
         "sha": sha,
         "subdir": subdir,
-        "description": str(manifest.get("description") or "").strip(),
+        "description": prose_desc or manifest_desc,
         "maintainer": args.maintainer,
         "tier": args.tier,
         "category": category,
@@ -139,7 +210,7 @@ def render(name: str, built: dict) -> str:
         line("repo", f["repo"]),
         line("sha", f["sha"]),
         line("subdir", f["subdir"]),
-        line("description", f["description"]),
+        line("description", yaml_scalar(f["description"])),
         line("maintainer", f["maintainer"]),
         line("tier", f["tier"]),
         line("category", f["category"]),
@@ -160,7 +231,7 @@ def render(name: str, built: dict) -> str:
     return "".join(out)
 
 
-def verify(text: str, name: str, sha: str) -> None:
+def verify(text: str, name: str, sha: str, description: str) -> None:
     """Round-trip through the loader that actually reads this file."""
     try:
         from hermes_cli.plugin_catalog import entry_from_mapping  # noqa: PLC0415
@@ -188,6 +259,15 @@ def verify(text: str, name: str, sha: str) -> None:
         problems.append(f"sha {entry.sha!r} was not preserved")
     if not entry.description:
         problems.append("description is empty")
+    # The emission itself is the risk here: a ` #` or `: ` inside prose ends the scalar early
+    # and YAML keeps the truncated head without complaint. Compare what was WRITTEN against
+    # what was MEANT, which is the one thing a round-trip through the loader cannot see.
+    elif str(data.get("description", "")).strip() != description.strip():
+        problems.append(
+            f"description did not survive the file verbatim:\n"
+            f"         wrote: {description.strip()[:120]!r}…\n"
+            f"         read:  {str(data.get('description', '')).strip()[:120]!r}…"
+        )
     if not entry.maintainer:
         problems.append("maintainer is empty")
     if entry.version and data.get("version") != entry.version:
@@ -226,6 +306,10 @@ def main() -> None:
     ap.add_argument("--docs-url", default="", dest="docs_url")
     ap.add_argument("--image", default="", help="https image on a GitHub host, 2:1")
     ap.add_argument("--middleware", default="", help="comma-separated middleware names (no manifest field exists)")
+    ap.add_argument("--prose", default="", help="submission prose file (default catalog/<name>.prose.md); "
+                                                f"its {PROSE_HEADING} section, when present, becomes the entry's description")
+    ap.add_argument("--no-prose", action="store_true", dest="no_prose",
+                    help="ignore the prose file and use plugin.yaml's description")
     ap.add_argument("--out", default="", help="write here instead of stdout")
     ap.add_argument("--verify", action="store_true", help="round-trip the entry through the real catalog loader")
     args = ap.parse_args()
@@ -234,7 +318,7 @@ def main() -> None:
     text = render(name, built)
 
     if args.verify:
-        verify(text, name, built["fields"]["sha"])
+        verify(text, name, built["fields"]["sha"], built["fields"]["description"])
 
     if args.out:
         Path(args.out).write_text(text)

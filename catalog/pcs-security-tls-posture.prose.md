@@ -12,9 +12,15 @@
 #
 #   ## INTRO        → the PR body's "What does this PR do?" prose, after the entry sentence
 #   ## DISCLOSURES  → the bullets under "## Disclosures"
+#   ## DESCRIPTION  → the entry's `description:` field, replacing plugin.yaml's one-liner
 #
-# Everything below `## INTRO` is published as written. Keep the two headings exactly as they
-# are, and keep no other `## [A-Z]` heading after `## DISCLOSURES` — the reader stops there.
+# Everything below `## INTRO` is published as written. Keep the three headings exactly as they
+# are. `## DESCRIPTION` must come LAST: the disclosures reader stops at the next `## [A-Z]`
+# heading, and a heading after it would be swallowed into the published disclosures.
+#
+# `## DESCRIPTION` exists because a reviewer's hand-edit to the entry's description — the
+# disclosure line naming what the tool reads and what it does not do — had nowhere to live in
+# this repo, so regenerating the entry reverted it and the next submission repeated the chore.
 
 ## INTRO
 
@@ -59,3 +65,12 @@ pcs-security-tls-posture` installs a tool that runs with no second install. The 
   PR plus `hermes plugins update pcs-security-tls-posture`.
 - **No Python dependencies**, declared or otherwise — nothing for the dependency policy in
   rule 9 to review.
+
+## DESCRIPTION
+
+Read-only audit of local TLS posture — certificate validity, key strength, deprecated protocols,
+weak cipher suites, and the certificate each server's configuration points at. Disclosure — reads
+a fixed list of system certificate and nginx/Apache config paths under / (or a caller-supplied
+prefix); makes no network connections and runs no subprocesses. If the sibling plugin
+pcs-security-core is installed, its copy of the shared contract is loaded in preference to the
+bundled one.
