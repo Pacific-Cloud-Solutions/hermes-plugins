@@ -10,9 +10,15 @@ plugins:
   - repo: Pacific-Cloud-Solutions/hermes-plugins
     subdir: plugins/pcs-security-core
     ref: d6b868a73c808a0c7ac38b00d37835542a68b8dc
+  # Re-pinned after the catalog merge: plugin-catalog/pcs-security-tls-posture.yaml pins
+  # 389d300cd43de459fd6f260498ba3c2e7fff95dc, and a pack install must resolve to the same code
+  # as `hermes plugins install pcs-security-tls-posture`. The other four stay at their own
+  # published commit until their own entries merge — moving them here would imply they were
+  # re-reviewed when nothing about them changed. scripts/preflight_catalog.py checks this
+  # equality per plugin.
   - repo: Pacific-Cloud-Solutions/hermes-plugins
     subdir: plugins/pcs-security-tls-posture
-    ref: d6b868a73c808a0c7ac38b00d37835542a68b8dc
+    ref: 389d300cd43de459fd6f260498ba3c2e7fff95dc
   - repo: Pacific-Cloud-Solutions/hermes-plugins
     subdir: plugins/pcs-security-log-triage
     ref: d6b868a73c808a0c7ac38b00d37835542a68b8dc
