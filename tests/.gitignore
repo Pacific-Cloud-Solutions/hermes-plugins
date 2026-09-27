@@ -2,9 +2,14 @@
 #   *.key      — these are throwaway test keys, but a private key in a repository is a
 #                private key in a repository, and the admission scanner has a critical
 #                pattern for exactly that. The certificates are public; the keys are not.
-#   .build/    — scratch trees the harnesses write and rewrite on every run.
-#   *.crt      — NO: the certificates ARE committed, so the suite runs without openssl.
-#                `make_certs.sh` refreshes them when openssl is available.
+#   .build/    — scratch trees the harnesses write and rewrite on every run, including the
+#                certificates generated against today's date.
+#   *.crt      — only the two fixtures pinned to FIXED dates are committed: exp3 (expired
+#                2021) and fut (not valid until 2030), which cannot be generated relative to
+#                today. Every other certificate is build output under .build/certs now —
+#                generating them into this directory rewrote ten committed files on every
+#                test run, which dirtied the working tree and made open_catalog_pr.sh refuse
+#                to run until they were restored.
 *.key
 *.csr
 *.srl

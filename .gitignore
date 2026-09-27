@@ -19,13 +19,6 @@ venv/
 # Scratch clone used by scripts/open_catalog_pr.sh — never committed.
 .catalog-work/
 
-# Test build output: certificates generated relative to NOW, and the synthetic trees the
-# harnesses audit. Regenerating tracked certificates rewrote them on every test run, so the
-# suite dirtied the working tree (and `open_catalog_pr.sh` refuses to run on a dirty tree).
-# The only certificates tracked are the two pinned to fixed dates — exp3/fut — which cannot
-# be generated relative to today.
-tests/.build/
-
 # OS / editor
 .DS_Store
 .idea/
