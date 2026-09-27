@@ -20,7 +20,13 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent / "plugins"
 PKG = REPO / "pcs-security-tls-posture"
-CERTS = HERE / "fixtures" / "certs"
+CERTS = HERE / ".build" / "certs"
+if not CERTS.is_dir():
+    raise SystemExit(
+        f"{CERTS} is missing — the certificates are build output now (generated relative to\n"
+        f"today, so a tracked copy could quietly expire on us). Build them first:\n"
+        f"    bash tests/fixtures/make_certs.sh      # or: bash tests/run_all.sh"
+    )
 OUT = HERE / ".build" / "tls-corr" / "root"
 
 passed = failed = 0
@@ -199,6 +205,17 @@ check("a correct fullchain reference produces NO TLS-007/008/009",
       not (find(clean, "TLS-007") or find(clean, "TLS-008") or find(clean, "TLS-009")),
       str([(f.check_id, f.assertion) for f in clean.findings]))
 payload = json.loads(pkg_tools.tls_posture({"root": str(CLEAN)}))
+# Stated before the grade, because this is the one condition that makes the grade assertion
+# unreachable: the plugin reports a check it could not perform as SKIPPED rather than guessing,
+# so a host with any skip grades `inconclusive` by design. Without a full X.509 parser it cannot
+# read key size or signature algorithm — correct behaviour that reads as a failure here, and
+# was, until run_all.sh started picking an interpreter that has the parser.
+skipped_ids = {s.get("check_id") for s in payload["coverage"]["checks_skipped"]}
+check("a full X.509 parser is available, so TLS-004/TLS-005 actually ran",
+      not ({"TLS-004", "TLS-005"} & skipped_ids),
+      f"skipped: {', '.join(sorted({'TLS-004', 'TLS-005'} & skipped_ids))} — `cryptography` is "
+      f"not importable in this interpreter, so a clean host grades `inconclusive` by design. "
+      f"Run tests/run_all.sh, which picks one that has it.")
 check("the correct config still grades cleanly",
       payload["grade"] == "no_findings_for_these_checks", str(payload["grade"]))
 check("the served certificate IS now audited, so its expiry was evaluated",

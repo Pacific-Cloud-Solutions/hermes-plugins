@@ -31,7 +31,13 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent / "plugins"
 PKG_DIR = REPO / "pcs-security-tls-posture"
-CERTS = HERE / "fixtures" / "certs"
+CERTS = HERE / ".build" / "certs"
+if not CERTS.is_dir():
+    raise SystemExit(
+        f"{CERTS} is missing — the certificates are build output now (generated relative to\n"
+        f"today, so a tracked copy could quietly expire on us). Build them first:\n"
+        f"    bash tests/fixtures/make_certs.sh      # or: bash tests/run_all.sh"
+    )
 OUT = HERE / ".build" / "tls-adv" / "root"
 
 spec = importlib.util.spec_from_file_location(

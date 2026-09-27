@@ -1,32 +1,63 @@
 #!/bin/bash
 # Run the whole tls-posture test suite. Exit non-zero if anything fails.
 #
-#   bash tests/run_all.sh            # regenerate fixtures if openssl is present, then run
+#   bash tests/run_all.sh            # build the fixtures, then run every harness
 #   bash tests/run_all.sh --certs-only
 #
-# These are plain scripts, not pytest: the suite has to run on a stock python3 with no
-# test framework installed. Each harness prints its own pass/fail lines and exits
-# non-zero on failure, so this file only has to aggregate exit codes.
+# These are plain scripts, not pytest: no test framework is needed. Each harness prints its own
+# pass/fail lines and exits non-zero on failure, so this file only has to aggregate exit codes.
 #
-# `cryptography` is needed by tls_posture_checks.py alone, which builds its own tree of
-# synthetic certificates with controlled validity windows. It is a TEST dependency and
-# is not imported by the plugin at runtime. If it is missing, that one harness fails
-# loudly rather than being skipped silently.
+# ONE dependency is required, and it is not optional: `cryptography`, a full X.509 parser. The
+# plugin imports it when it can and, when it cannot, reports TLS-004 (key size) and TLS-005
+# (signature algorithm) as SKIPPED rather than guessing — correct behaviour, and the reason the
+# correlation harness's "a clean host stays clean" assertion can never hold without it: a host
+# with checks that could not run grades `inconclusive`, by design, never `no_findings`. Running
+# the suite under a python without the parser therefore produced a failure that looked like a
+# plugin bug and was an interpreter choice. So: find an interpreter that has the parser, name it,
+# and refuse to run otherwise. Failing loudly beats a green-looking run that proves less.
 set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE"
-PY="${PYTHON:-python3}"
 
-command -v "$PY" >/dev/null 2>&1 || { echo "run_all.sh: no python3 on PATH" >&2; exit 1; }
+pick_python() {
+    for cand in "${PYTHON:-}" python3 \
+                "$HERE/../.venv/bin/python" "$HERE/../venv/bin/python" \
+                "$HOME/.hermes/hermes-agent/venv/bin/python"; do
+        [ -n "$cand" ] || continue
+        command -v "$cand" >/dev/null 2>&1 || continue
+        if "$cand" -c 'import cryptography' >/dev/null 2>&1; then
+            printf '%s\n' "$cand"
+            return 0
+        fi
+    done
+    return 1
+}
 
+if ! PY="$(pick_python)"; then
+    echo "run_all.sh: no interpreter with a full X.509 parser (cryptography) was found." >&2
+    echo "            Tried: \$PYTHON, python3, ./.venv, ./venv, ~/.hermes/hermes-agent/venv" >&2
+    echo "            Set PYTHON=<path>, or: pip install cryptography" >&2
+    echo "            Not running: without the parser TLS-004/TLS-005 are reported as skipped," >&2
+    echo "            which is correct and would read as a plugin failure." >&2
+    exit 1
+fi
+echo "== python: $PY"
+echo "   $("$PY" -c 'import cryptography; print("cryptography", cryptography.__version__)')"
+
+# Fixtures are build output, written under tests/.build (gitignored). They used to be generated
+# into the tracked fixtures/certs directory, which rewrote ten committed certificates on every
+# run — dirtying the tree, and making `scripts/open_catalog_pr.sh` refuse to run until they were
+# restored. Regenerating relative to today is still right; writing it into tracked files was not.
 if command -v openssl >/dev/null 2>&1; then
-    echo "== refreshing certificate fixtures (openssl) =="
-    bash "$HERE/fixtures/make_certs.sh" >/dev/null 2>&1 &&
-        echo "   ok, fixtures regenerated against today's date" ||
-        echo "   WARNING: fixture regeneration failed; using the committed certificates"
+    echo "== building certificate fixtures (openssl) into tests/.build/certs"
+    if bash "$HERE/fixtures/make_certs.sh"; then
+        echo "   ok, built against today's date"
+    else
+        echo "   WARNING: fixture build failed; using whatever is already in tests/.build/certs" >&2
+    fi
 else
-    echo "== no openssl; using the committed certificate fixtures =="
+    echo "== no openssl; using the existing tests/.build/certs" >&2
 fi
 
 if [ "${1:-}" = "--certs-only" ]; then
@@ -34,7 +65,6 @@ if [ "${1:-}" = "--certs-only" ]; then
 fi
 
 FAILED=""
-TOTAL_PASS=0
 
 for t in tls_posture_checks tls_posture_adversarial tls_posture_correlation; do
     printf '\n===== %s =====\n' "$t"

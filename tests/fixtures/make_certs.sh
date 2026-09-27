@@ -10,12 +10,18 @@
 # later; the only certificates pinned to fixed dates are the two that must be permanently
 # expired or permanently future-dated.
 #
+# Output goes to tests/.build/certs (gitignored), NOT beside this script. Generating into the
+# tracked directory rewrote the certificates on every test run, so the suite dirtied the
+# working tree — and `scripts/open_catalog_pr.sh` refuses to run on a dirty tree, which made
+# a test run look like a broken submission. The two fixed-date fixtures (exp3, fut) stay
+# tracked in fixtures/certs/ and are copied in, so every harness reads one directory.
+#
 # Run:  bash tests/fixtures/make_certs.sh [outdir]
 # Idempotent: it rewrites everything each time.
 set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-OUT="${1:-$HERE/certs}"
+OUT="${1:-$HERE/../.build/certs}"
 mkdir -p "$OUT"
 cd "$OUT"
 rm -f ./*.crt ./*.key ./*.csr ./*.srl
@@ -55,17 +61,19 @@ openssl req -x509 -newkey rsa:1024 -nodes -keyout weak.key -out weak.crt \
 say "weak.crt" "RSA 1024, self-signed"
 
 # --- permanently dated: expired and not-yet-valid ----------------------------
-# Fixed dates, deliberately: these two must stay expired and un-issued forever, so they
-# cannot be generated relative to today.
-openssl req -x509 -newkey rsa:2048 -nodes -keyout exp3.key -out exp3.crt \
-    -subj "/CN=expired-2020.example" \
-    -not_before 20200101000000Z -not_after 20210101000000Z 2>/dev/null
-say "exp3.crt" "RSA 2048, expired 2020-2021 (fixed)"
-
-openssl req -x509 -newkey rsa:2048 -nodes -keyout fut.key -out fut.crt \
-    -subj "/CN=future.example" \
-    -not_before 20300101000000Z -not_after 20310101000000Z 2>/dev/null
-say "fut.crt" "RSA 2048, not valid until 2030 (fixed)"
+# COPIED, not generated: these two must stay expired and un-issued forever, so they cannot be
+# produced relative to today — and a fixed date is exactly the kind of thing that belongs in a
+# tracked file somebody can read. Copying them in keeps every harness reading one directory
+# while leaving a single source for each fixture.
+for fixed in exp3 fut; do
+    if [ ! -f "$HERE/certs/$fixed.crt" ]; then
+        echo "make_certs.sh: $HERE/certs/$fixed.crt is missing — it is tracked, not generated" >&2
+        exit 1
+    fi
+    cp "$HERE/certs/$fixed.crt" "$OUT/$fixed.crt"
+done
+say "exp3.crt" "RSA 2048, expired 2020-2021 (tracked, fixed dates)"
+say "fut.crt" "RSA 2048, not valid until 2030 (tracked, fixed dates)"
 
 # --- EC ---------------------------------------------------------------------
 # The fixture NAMES are counter-intuitive and must stay that way, because the harness
