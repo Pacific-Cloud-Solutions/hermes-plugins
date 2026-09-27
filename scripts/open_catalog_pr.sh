@@ -13,8 +13,22 @@
 set -euo pipefail
 
 UPSTREAM="NousResearch/hermes-agent"
-FORK_OWNER="Pacific-Cloud-Solutions"
+# Where the submission branch lives. GitHub offers "Allow edits from maintainers" only on forks
+# in a PERSONAL account, so an org-owned fork means a maintainer cannot push a review chore into
+# our branch: the chore turns into a salvage branch inside the upstream repo and our PR is closed
+# as superseded (exactly what happened to #123278 — contributor email maps plus a description
+# edit that could not be pushed). Override with FORK_OWNER=<login> to submit from a personal
+# fork, where maintainers CAN push. Attribution does not depend on this: the catalog entry's
+# `repo:` and `maintainer:` fields carry the org either way.
+FORK_OWNER="${FORK_OWNER:-Pacific-Cloud-Solutions}"
 BASE_BRANCH="main"
+
+# The identity the entry commit is authored with. Upstream's contributor check reads this email
+# (`.github/workflows/contributor-check.yml`), so it must be mapped — see catalog/contributors.map
+# and the check in step 3.
+IDENTITY_NAME="Pacific Cloud Solutions"
+IDENTITY_EMAIL="noreply@pacificcloudsolutions.example"
+CONTRIBUTORS_MAP="$(cd "$(dirname "$0")/.." && pwd)/catalog/contributors.map"
 
 ENTRY="${1:-}"
 NAME="${2:-}"
@@ -32,6 +46,35 @@ done
 
 step() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
 work() { printf '    %s\n' "$1"; }
+
+# Upstream skips these outright in the contributor check; a mapping file for one would be dead
+# weight. Mirrors the `case` in .github/workflows/contributor-check.yml — do not widen it, or a
+# check that upstream still fails would look satisfied here.
+skipped_email() {
+  case "$1" in
+    *teknium*|*noreply@github.com*|*dependabot*|*github-actions*|*anthropic.com*|*cursor.com*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+upstream_has_mapping() {  # <email> → 0 when upstream main already carries the mapping file
+  gh api "repos/$UPSTREAM/contents/contributors/emails/$1" >/dev/null 2>&1
+}
+
+map_login() {  # <email> → the login from catalog/contributors.map, or ""
+  [ -f "$CONTRIBUTORS_MAP" ] || return 0
+  awk -v e="$1" '$1 == e { print $2; exit }' "$CONTRIBUTORS_MAP"
+}
+
+owner_is_org() {  # <login> → 0 when GitHub reports an Organization, 2 when it cannot say
+  local json
+  json=$(gh api "users/$1" 2>/dev/null || true)
+  case "$json" in
+    *'"type":"Organization"'*|*'"type": "Organization"'*) return 0 ;;
+    "") return 2 ;;
+    *) return 1 ;;
+  esac
+}
 
 step "1/6 preflight"
 gh api user >/dev/null 2>&1 || { echo "error: gh is not authenticated (run: gh auth login)" >&2; exit 1; }
@@ -82,11 +125,22 @@ if command -v "$HERMES_BIN" >/dev/null 2>&1 && [ -d "$PLUGIN_DIR" ]; then
   # The body claims the validation was run against the PINNED commit. Validate actually
   # reads the working copy, so that claim only holds when the working copy IS the pin:
   # a dirty tree would publish a passing report for code that is not what gets installed.
+  #
+  # The honest test is that the PLUGIN DIRECTORY is the same code at both commits — not that
+  # HEAD equals the pin. Catalog scripts, prose and tests land after a pin without touching
+  # the plugin, and demanding HEAD == pin refused every submission in that state while the
+  # report would have been perfectly accurate.
   HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
   if [ "$HEAD_SHA" != "$SHA" ]; then
-    echo "error: working HEAD is ${HEAD_SHA:0:12}… but the entry pins ${SHA:0:12}…" >&2
-    echo "       check out the pinned commit, or regenerate the entry at HEAD." >&2
-    exit 1
+    if git diff --quiet "$SHA:$PLUGIN_DIR" "$HEAD_SHA:$PLUGIN_DIR" 2>/dev/null; then
+      work "HEAD ${HEAD_SHA:0:12}… ≠ pin ${SHA:0:12}…, but $PLUGIN_DIR is identical at both"
+    else
+      echo "error: working HEAD is ${HEAD_SHA:0:12}… but the entry pins ${SHA:0:12}…, and" >&2
+      echo "       $PLUGIN_DIR differs between them — a report generated here would not" >&2
+      echo "       describe the code the pin installs." >&2
+      echo "       check out the pinned commit, or regenerate the entry at HEAD." >&2
+      exit 1
+    fi
   fi
   if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
     echo "error: working tree is dirty, so a passing report would not describe the pinned commit" >&2
@@ -115,6 +169,40 @@ work "branch: $BRANCH (from $UPSTREAM:$BASE_BRANCH)"
 work "file:   $FILENAME"
 echo
 sed 's/^/    | /' "$ENTRY"
+
+# --- contributor email mapping: the chore that became a salvage branch ----------------
+# Upstream fails a PR whose commits carry an author email with no `contributors/emails/<email>`
+# mapping, and a maintainer cannot push that file into an org-owned fork's branch (see
+# FORK_OWNER above). So the mapping ships with the PR instead: catalog/contributors.map seeds
+# the deterministic ones, and upstream's own scripts/audit_pr_attribution.py --fix resolves
+# anything else inside the scratch clone before the push. Reported here so the failure is
+# visible before a branch exists.
+echo
+OWNER_KIND=0
+owner_is_org "$FORK_OWNER" || OWNER_KIND=$?
+if [ "$OWNER_KIND" -eq 0 ]; then
+  work "note: $FORK_OWNER is an organization, so a maintainer cannot push a review chore into"
+  work "      the PR branch — that is why the mapping below must be complete before the push."
+elif [ "$OWNER_KIND" -eq 1 ]; then
+  work "note: $FORK_OWNER is a personal account, so a maintainer CAN push review chores into"
+  work "      the branch (\"Allow edits from maintainers\" is offered on personal forks)."
+else
+  work "note: could not ask GitHub whether $FORK_OWNER is an org; assuming the fork must"
+  work "      satisfy the contributor check on its own (see FORK_OWNER in this script)."
+fi
+for email in "$IDENTITY_EMAIL"; do
+  if skipped_email "$email"; then
+    work "author email $email — skipped by upstream's contributor check, no mapping needed"
+  elif upstream_has_mapping "$email"; then
+    work "author email $email — already mapped upstream"
+  elif [ -n "$(map_login "$email")" ]; then
+    work "author email $email — unmapped upstream; the PR will ship contributors/emails/$email"
+  else
+    work "WARNING: author email $email is unmapped upstream and absent from"
+    work "         catalog/contributors.map — upstream's audit_pr_attribution.py --fix will"
+    work "         try to resolve it by API; if it cannot, the run stops before the push."
+  fi
+done
 
 TITLE="plugin-catalog: add $NAME"
 # Quoted heredoc + explicit substitution. Two reasons it is not `BODY=$(cat <<'EOF' ...)`:
@@ -363,7 +451,20 @@ else
   # $FORK_OWNER says. Without this the fork lands under the personal account, the
   # readiness probe below never finds it, and the clone fails on a repo that does not
   # exist — which the suppressed error made invisible.
-  if ! gh api -X POST "repos/$UPSTREAM/forks" -f organization="$FORK_OWNER" >/dev/null; then
+  #
+  # The flag is only correct for an ORG owner: `organization=<a user login>` is an error.
+  # With FORK_OWNER set to a personal account (the way to get "Allow edits from
+  # maintainers"), the bare call is the one that lands in the right place. On an
+  # unanswered API call, assume org — that is this repo's default fork and the historical
+  # behavior, so an API hiccup cannot silently move the branch to a personal fork.
+  FORK_ORG=""
+  OWNER_KIND=0
+  owner_is_org "$FORK_OWNER" || OWNER_KIND=$?
+  if [ "$OWNER_KIND" -eq 0 ] || [ "$OWNER_KIND" -eq 2 ]; then
+    FORK_ORG="-f organization=$FORK_OWNER"
+  fi
+  # shellcheck disable=SC2086  # deliberate word-splitting of the optional fixed flag
+  if ! gh api -X POST "repos/$UPSTREAM/forks" $FORK_ORG >/dev/null; then
     echo "error: could not fork $UPSTREAM into $FORK_OWNER." >&2
     echo "       Check that the authenticated account may create repos in that org" >&2
     echo "       (gh auth status), or point FORK_OWNER at a personal account." >&2
@@ -402,10 +503,61 @@ if [ -f "$WORKDIR/$FILENAME" ]; then
 fi
 cp "$ENTRY" "$WORKDIR/$FILENAME"
 git -C "$WORKDIR" add "$FILENAME"
-git -C "$WORKDIR" -c user.name="Pacific Cloud Solutions" \
-  -c user.email="noreply@pacificcloudsolutions.example" \
+git -C "$WORKDIR" -c user.name="$IDENTITY_NAME" \
+  -c user.email="$IDENTITY_EMAIL" \
   commit -q -m "$TITLE" -m "$(printf '%s' "$BODY" | head -c 400)"
 work "committed $(git -C "$WORKDIR" rev-parse --short HEAD)"
+
+# --- the contributor mapping ships with the PR -----------------------------------------
+# Run upstream's OWN checker from the branch, never a copy of its logic: it mirrors
+# .github/workflows/contributor-check.yml, and a local reimplementation more permissive than
+# CI is worse than no check at all. It cannot push the fix into our branch when the fork is
+# org-owned, so the fix has to already be in the branch before the push.
+#
+# It computes its range as `git merge-base origin/main HEAD`, and this clone's origin is the
+# FORK — whose main is not in our shallow history, so merge-base either fails or spans
+# upstream's own commits. Point origin/main at the base we branched from, which is exactly
+# what that range is supposed to mean.
+git -C "$WORKDIR" update-ref refs/remotes/origin/main \
+  "$(git -C "$WORKDIR" rev-parse "upstream/$BASE_BRANCH")"
+
+# Deterministic mappings from this repo first: reviewed here, no API guesswork. Anything not
+# listed is left to upstream's --fix, which resolves it against the GitHub API.
+if [ -f "$CONTRIBUTORS_MAP" ]; then
+  while read -r _email _login; do
+    case "$_email" in ""|'#'*) continue ;; esac
+    [ -n "$_login" ] || continue
+    # Not `[ -f … ] && continue`: a failing test as a standalone statement exits the script
+    # under `set -e`.
+    if [ -f "$WORKDIR/contributors/emails/$_email" ]; then continue; fi
+    printf '%s\n' "$_login" > "$WORKDIR/contributors/emails/$_email"
+    work "mapped $_email → $_login (from catalog/contributors.map)"
+  done < "$CONTRIBUTORS_MAP"
+fi
+
+if [ -f "$WORKDIR/scripts/audit_pr_attribution.py" ]; then
+  AUDIT_RC=0
+  AUDIT_OUT=$( (cd "$WORKDIR" && python3 scripts/audit_pr_attribution.py --fix) 2>&1 ) || AUDIT_RC=$?
+  printf '%s\n' "$AUDIT_OUT" | sed 's/^/    | /'
+  if [ "$AUDIT_RC" -ne 0 ]; then
+    echo "error: upstream's contributor check would fail on this branch, and the mapping" >&2
+    echo "       could not be resolved automatically (nothing has been pushed)." >&2
+    echo "       Add the email and its GitHub login to catalog/contributors.map, then re-run." >&2
+    exit 1
+  fi
+else
+  echo "warning: upstream's scripts/audit_pr_attribution.py is not in the clone — the" >&2
+  echo "         contributor check could not be run; the mapping in $CONTRIBUTORS_MAP" >&2
+  echo "         is the only thing protecting this PR from that chore." >&2
+fi
+
+if [ -n "$(git -C "$WORKDIR" status --porcelain contributors)" ]; then
+  git -C "$WORKDIR" add contributors
+  git -C "$WORKDIR" -c user.name="$IDENTITY_NAME" -c user.email="$IDENTITY_EMAIL" \
+    commit -q -m "chore($NAME): map contributor email(s) for this submission"
+  work "committed contributor email mapping(s)"
+fi
+
 git -C "$WORKDIR" push -u origin "$BRANCH" >/dev/null 2>&1
 work "pushed to $FORK_OWNER/hermes-agent:$BRANCH"
 

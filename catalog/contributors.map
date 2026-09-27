@@ -1,0 +1,20 @@
+# Commit-author emails this repo's catalog submissions are allowed to carry, and the GitHub
+# login each maps to. One line per email: "<commit-author email> <github-login>".
+#
+# Why this file exists: upstream fails any PR whose commits carry an author email that has no
+# `contributors/emails/<email>` mapping (`.github/workflows/contributor-check.yml`), and the fix
+# is a one-line file. We cannot leave that file to the reviewer — our submission fork is
+# org-owned, and GitHub only offers "Allow edits from maintainers" on forks in a PERSONAL
+# account, so a maintainer cannot push it into our branch. What happened instead (PR #123278):
+# the whole PR was cherry-picked onto a salvage branch inside the upstream repo, and ours was
+# closed as superseded.
+#
+# scripts/open_catalog_pr.sh reads this file and writes the mapping into the PR branch before
+# pushing, so the chore never reaches a reviewer. Entries here are deterministic and reviewed in
+# this repo; anything NOT listed is left to upstream's own
+# `scripts/audit_pr_attribution.py --fix`, which resolves it against the GitHub API.
+#
+# Keep the login a real GitHub account: upstream's add_contributor.py rejects a bad one, and a
+# wrong login silently credits someone else's commits.
+jasoncornell76@gmail.com kingpin44
+noreply@pacificcloudsolutions.example kingpin44
