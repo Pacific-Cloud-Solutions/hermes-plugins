@@ -1,0 +1,8 @@
+{
+  "name": "aichipmunk",
+  "label": "AI Chipmunk",
+  "description": "Pair this machine's Hermes bots with the AI Chipmunk mobile app.",
+  "icon": "Plug",
+  "version": "0.1.0",
+  "api": "plugin_api.py"
+}

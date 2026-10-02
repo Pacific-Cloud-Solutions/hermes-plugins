@@ -1,0 +1,4 @@
+name: aichipmunk
+version: 0.1.0
+description: "Connect this machine's Hermes bots to the AI Chipmunk mobile app. Renders the pairing code inside Hermes Desktop so no terminal is required."
+author: "Jason Cornell (Pacific Cloud Solutions)"
