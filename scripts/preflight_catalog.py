@@ -30,10 +30,15 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 EXPECTED_REPO = "https://github.com/Pacific-Cloud-Solutions/hermes-plugins"
 PACK_FILE = REPO_ROOT / "pcs-security-guard.yaml"
-ENTRY_KEYS = {
+ENTRY_KEYS_REQUIRED = {
     "name", "repo", "sha", "subdir", "description", "maintainer", "tier",
-    "category", "version", "image", "readme", "platforms", "capabilities",
+    "category", "readme", "platforms", "capabilities",
 }
+# Optional in the loader's schema — the catalog README says an image is carried by 45 of 286
+# entries. Requiring them here turned "we generated no card image" into "do not open the PR",
+# which is a claim about the schema that the schema does not make.
+ENTRY_KEYS_OPTIONAL = {"image", "docs_url", "requires_hermes", "version", "screenshots"}
+ENTRY_KEYS = ENTRY_KEYS_REQUIRED | ENTRY_KEYS_OPTIONAL
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 NAME_RE = re.compile(r"^[a-z0-9_-]{1,64}$")
 PROSE_HEADING = "## DESCRIPTION"
@@ -132,10 +137,16 @@ def main() -> int:
     section(f"entry — {entry_path.name}")
 
     got_keys = set(raw)
-    check(got_keys == ENTRY_KEYS, "key set is exactly the schema",
-          f"extra={sorted(got_keys - ENTRY_KEYS) or 'none'} "
-          f"missing={sorted(ENTRY_KEYS - got_keys) or 'none'} (prose in the file is "
-          f"comment-only, as the generator emits it)")
+    check(not (got_keys - ENTRY_KEYS), "no keys outside the schema",
+          f"unknown={sorted(got_keys - ENTRY_KEYS) or 'none'} "
+          f"(a typo here is dropped by the loader without an error)")
+    check(ENTRY_KEYS_REQUIRED <= got_keys, "every required key is present",
+          f"missing={sorted(ENTRY_KEYS_REQUIRED - got_keys) or 'none'} "
+          f"(prose in the file is comment-only, as the generator emits it)")
+    absent_optional = sorted(ENTRY_KEYS_OPTIONAL - got_keys)
+    if absent_optional:
+        print(f"  [note] optional key(s) absent: {', '.join(absent_optional)}"
+              f"{' — no card image on the catalog page' if 'image' in absent_optional else ''}")
 
     check(bool(NAME_RE.match(str(name))), "name matches [a-z0-9_-]{1,64}", f"name={name}")
 
