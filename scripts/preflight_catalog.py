@@ -296,8 +296,16 @@ def main() -> int:
                           f"different code than `hermes plugins install {name}`. Re-pin "
                           f"pcs-security-guard.yaml in the same commit as the entry.")
         else:
-            print(f"  note: {name} is NOT in the pack. Only correct if it scans dangerous"
-                  f" or is deliberately excluded — the pack file records the reason.")
+            # The pack is the SECURITY SUITE's installer, not a manifest of this repo. A
+            # plugin outside the suite has no business being in it, so "not in the pack" is
+            # only notable for a suite plugin — the note that used to fire unconditionally
+            # was written when this repo held nothing else.
+            if name.startswith("pcs-security-"):
+                print(f"  note: {name} is NOT in the pack. Only correct if it scans dangerous"
+                      f" or is deliberately excluded — the pack file records the reason.")
+            else:
+                print(f"  note: {name} is not part of the security suite, so it is not in"
+                      f" pcs-security-guard.yaml — expected, not a gap.")
     else:
         check(False, "pack file exists", str(PACK_FILE))
 

@@ -146,6 +146,11 @@ catalog installs resolve to identical code. Do it **per plugin**: the other plug
 published pin until their own entries merge, and `scripts/preflight_catalog.py` now checks that
 equality for the plugin being submitted.
 
+The pack is the **security suite's** installer, not a manifest of this repo. A plugin that is not
+part of the suite (`aichipmunk`, for one) is simply not in it, and `preflight_catalog.py` says so
+without flagging it. Every plugin in this repo still gets its own catalog entry, tag and prose file
+— being in the pack is unrelated to being listed.
+
 **Never push to `NousResearch/hermes-agent` and never open an upstream PR without explicit
 sign-off.** Develop, validate, and stage locally; the `--open-pr` step is a human decision.
 
