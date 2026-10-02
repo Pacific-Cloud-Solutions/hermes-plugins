@@ -48,9 +48,10 @@ page reads. No core files are touched, so an update cannot overwrite it.
   confirms this on the desktop-surface check.
 - **No self-updater**, and no bundled third-party code. Updates reach users only as a SHA-bump PR
   plus `hermes plugins update aichipmunk`.
-- **Tailscale is optional.** Wi-Fi pairing works over the local network with no Tailscale
-  installed; the tailnet path exists so the phone also works away from home. The plugin reports
-  which of the two the current bind actually allows rather than implying both work.
+- **Tailscale is how the phone reaches these bots.** The API server stays on a loopback bind
+  and `tailscale serve` carries that port onto the tailnet, so the phone must be signed in to the
+  same tailnet as this machine. There is no second, local-network address: the plugin reports
+  what the current setup actually allows rather than implying an address works.
 - **It reports rather than guesses.** When the API server's bind and the `tailscale serve` handler
   disagree — which is the state that breaks a phone that used to connect — the page says so
   instead of offering an address that cannot answer. Every address it hands over is one it has
@@ -58,4 +59,4 @@ page reads. No core files are touched, so an update cannot overwrite it.
 
 ## DESCRIPTION
 
-Pairs this machine's Hermes bots with the AI Chipmunk mobile app from inside Hermes Desktop — pick a bot, get the reachable host, profile and API key as a scannable code. Registers a `hermes aichipmunk` CLI command, a desktop page and a dashboard API; no tools or hooks. Disclosure — it can set `platforms.api_server.host` for the profile that owns the API server and restart that gateway, reads `API_SERVER_KEY` from that profile's secret scope at pairing time and renders it locally as the pairing code, and shells out to the `tailscale` and `hermes` CLIs; it makes no other network calls and touches no core files.
+Pairs this machine's Hermes bots with the AI Chipmunk mobile app from inside Hermes Desktop — pick a bot, get the reachable host, profile and API key as a scannable code. Registers a `hermes aichipmunk` CLI command, a desktop page and a dashboard API; no tools or hooks. Disclosure — it adds a `tailscale serve` entry carrying the API server's port onto the tailnet (and only on a machine with no Tailscale CLI does it fall back to setting `platforms.api_server.host` and restarting that gateway), reads `API_SERVER_KEY` from the owning profile's secret scope at pairing time and renders it locally as the pairing code, and shells out to the `tailscale` and `hermes` CLIs; it makes no other network calls and touches no core files. Pairing requires Tailscale on this machine and on the phone.

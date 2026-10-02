@@ -1,9 +1,10 @@
 """The plugin backend's contract: what it refuses, previews, and performs.
 
-The confirm gate is the safety-critical part. The action restarts the gateway
-that owns the listening socket, so a request that arrives without an explicit
-confirm must change NOTHING — asserted by proving `set_bind` was never called,
-not merely by reading the response body.
+The confirm gate is the safety-critical part. The action can restart the gateway
+that owns the listening socket — the fallback path does, the serve path does not —
+so a request that arrives without an explicit confirm must change NOTHING — asserted
+by proving `reach_from_anywhere` was never called, not merely by reading the response
+body.
 """
 
 from __future__ import annotations
@@ -56,7 +57,11 @@ class UseTailscale(unittest.TestCase):
             mock.patch.object(pairing, "tailnet_peers", return_value=None),
             mock.patch.object(pairing, "tailnet_serve_url", return_value=""),
             mock.patch.object(pairing, "api_server_owner", return_value="default"),
-            mock.patch.object(pairing, "set_bind", return_value=(True, "Written.")),
+            mock.patch.object(
+                pairing,
+                "reach_from_anywhere",
+                return_value=(True, "Written.", "serve"),
+            ),
             mock.patch.object(
                 pairing, "api_server_settings", return_value=(True, "100.101.102.103", 8642)
             ),
@@ -91,9 +96,13 @@ class UseTailscale(unittest.TestCase):
             mock.patch.object(pairing, "api_server_owner", return_value="default"),
             mock.patch.object(
                 pairing,
-                "set_bind",
-                return_value=(True, "Now listening on 100.101.102.103."),
-            ) as set_bind,
+                "reach_from_anywhere",
+                return_value=(True, "Now served at http://box.ts.net:8642 — the bind did not change.", "serve"),
+            ) as reach,
+            # The trap this guards: the old action rebound the API server onto the tailnet
+            # address, which answers nobody on macOS, so one tap left the user unable to
+            # pair at all. With a working Serve path, the bind must never be touched.
+            mock.patch.object(pairing, "set_bind") as set_bind,
             mock.patch.object(
                 pairing, "api_server_settings", return_value=(True, "100.101.102.103", 8642)
             ),
@@ -105,7 +114,9 @@ class UseTailscale(unittest.TestCase):
         self.assertTrue(out["applied"])
         self.assertTrue(out["reachable"])
         self.assertEqual(out["bind_verdict"], "anywhere")
-        set_bind.assert_called_once()
+        self.assertEqual(out["method"], "serve")
+        reach.assert_called_once()
+        set_bind.assert_not_called()
 
     def test_a_bind_that_does_not_answer_says_so_instead_of_claiming_success(self):
         with (
@@ -113,7 +124,11 @@ class UseTailscale(unittest.TestCase):
             mock.patch.object(pairing, "tailnet_peers", return_value=1),
             mock.patch.object(pairing, "tailnet_serve_url", return_value=""),
             mock.patch.object(pairing, "api_server_owner", return_value="default"),
-            mock.patch.object(pairing, "set_bind", return_value=(True, "Written.")),
+            mock.patch.object(
+                pairing,
+                "reach_from_anywhere",
+                return_value=(True, "Written.", "serve"),
+            ),
             mock.patch.object(
                 pairing, "api_server_settings", return_value=(True, "100.101.102.103", 8642)
             ),
@@ -124,7 +139,9 @@ class UseTailscale(unittest.TestCase):
             out = plugin_api.use_tailscale(plugin_api.UseTailscaleRequest(confirm=True))
 
         self.assertFalse(out["reachable"])
-        self.assertIn("Not answering yet", out["detail"])
+        # The serve path words this "The API server is not answering yet." — what the test
+        # cares about is the claim, not the capitalisation.
+        self.assertIn("not answering yet", out["detail"].lower())
 
     def test_a_failed_bind_is_a_500_carrying_the_reason(self):
         with (
@@ -132,7 +149,11 @@ class UseTailscale(unittest.TestCase):
             mock.patch.object(pairing, "tailnet_peers", return_value=1),
             mock.patch.object(pairing, "tailnet_serve_url", return_value=""),
             mock.patch.object(pairing, "api_server_owner", return_value="default"),
-            mock.patch.object(pairing, "set_bind", return_value=(False, "config set failed.")),
+            mock.patch.object(
+                pairing,
+                "reach_from_anywhere",
+                return_value=(False, "config set failed.", "bind"),
+            ),
         ):
             with self.assertRaises(HTTPException) as caught:
                 plugin_api.use_tailscale(plugin_api.UseTailscaleRequest(confirm=True))

@@ -131,21 +131,42 @@ def use_tailscale(req: UseTailscaleRequest) -> dict:
             "address": addr,
             "owner": owner,
             "detail": (
-                f"This binds the API server to {addr} and restarts the '{owner}' "
-                "gateway that owns it. Runs in progress will be drained."
+                f"Serves the '{owner}' API server onto your tailnet so the phone can "
+                "reach it from anywhere. The bind does not change and nothing restarts; "
+                "if this machine has no Tailscale at all, it falls back to moving the "
+                "bind instead."
             ),
         }
 
-    ok, message = pairing.set_bind(addr, owner)
+    ok, message, method = pairing.reach_from_anywhere(owner)
     if not ok:
         raise HTTPException(status_code=500, detail=message)
 
     _enabled, config_host, port = pairing.api_server_settings(
         pairing.profile_dir(owner)
     )
+
+    if method == "serve":
+        # Nothing restarted and nothing moved, so there is no listener to wait for. The
+        # liveness probe goes to where Serve proxies TO, never to the tailnet address: a
+        # socket there answers nobody on macOS, so probing it would report a false failure
+        # for a pairing that works.
+        local = f"http://{pairing.join_host(config_host, port)}"
+        reachable = pairing.health(local)
+        return {
+            "applied": True,
+            "method": method,
+            "address": addr,
+            "served_url": pairing.tailnet_serve_url(pairing.join_host(config_host, port)),
+            "bind_verdict": pairing.bind_verdict(config_host),
+            "reachable": reachable,
+            "detail": message if reachable
+            else f"{message} The API server is not answering yet.",
+        }
+
     base_url = pairing.join_host(addr, port)
-    # The listener needs a moment to come back up; reporting the old state here
-    # would tell the user their one tap failed when it did not.
+    # The fallback moved the bind, so the listener needs a moment to come back up; reporting
+    # the old state here would tell the user their one tap failed when it did not.
     reachable = False
     for _attempt in range(8):
         if pairing.health(base_url):
@@ -155,6 +176,7 @@ def use_tailscale(req: UseTailscaleRequest) -> dict:
 
     return {
         "applied": True,
+        "method": method,
         "address": addr,
         "bind_verdict": pairing.bind_verdict(config_host),
         "reachable": reachable,

@@ -19,10 +19,10 @@ one folder, two halves:
 | Desktop | `desktop/plugin.js` | renders the code in Hermes Desktop: page, sidebar row, ⌘K command, status chip |
 | Backend | `dashboard/plugin_api.py` | the desktop page's data (`/api/plugins/aichipmunk/`) |
 
-No core files are touched, so an update cannot overwrite it. Two things outside it still
-have to be right, and the plugin reports on both at pairing time: the api_server bind (the
-address the phone must actually reach) and a healthy `tailscale` daemon when you pair over
-the tailnet rather than the local network.
+No core files are touched, so an update cannot overwrite it. Two things outside it still have
+to be right, and the plugin reports on both at pairing time: the api_server bind, and a healthy
+`tailscale` daemon on this machine — the phone reaches these bots over the tailnet, so Tailscale
+has to be signed in here and on the phone.
 
 ## Install
 
@@ -50,6 +50,14 @@ Headless equivalent:
 hermes aichipmunk -p default          # renders a terminal code
 hermes aichipmunk -p default --json   # machine-readable (never includes the QR blob)
 ```
+
+## Pairing a machine that isn't this one
+
+The plugin pairs **the machine it runs on**: pairing reads that machine's own profiles, its
+`API_SERVER_KEY` and its api_server bind. To pair a phone with a VPS or another host, install the
+plugin on that host — running it here pairs this machine's bots. If your desktop app is connected
+to that host, the plugin's page and its API come from that host's backend, so the page appears
+exactly where you would expect it.
 
 ## Security posture
 

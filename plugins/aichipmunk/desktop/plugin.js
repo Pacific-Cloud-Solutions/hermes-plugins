@@ -412,8 +412,9 @@ function AiChipmunkPage() {
                         jsx('span', {
                           className: 'text-(--ui-text-tertiary)',
                           children:
-                            `Binds the API server to ${state.tailnet} and restarts ` +
-                            `the '${state.owner}' gateway. Runs in progress drain.`
+                            `Serves the '${state.owner}' API server onto your tailnet so the ` +
+                            `phone can reach it from anywhere. The bind does not change and ` +
+                            `nothing restarts.`
                         }),
                         jsx(Button, {
                           onClick: () => void useTailscale(),

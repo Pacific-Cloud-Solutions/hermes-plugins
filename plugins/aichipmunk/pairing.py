@@ -675,6 +675,96 @@ def set_bind(addr: str, owner: str | None = None) -> tuple[bool, str]:
     return True, f"Now listening on {addr}."
 
 
+def ensure_serve(bind_host: str = "", port: int = 0, owner: str | None = None) -> dict:
+    """Make ``tailscale serve`` carry this api_server onto the tailnet. Idempotent.
+
+    This is the remedy that works where a tailnet bind does not. A socket bound to the tailnet
+    address answers nobody on macOS — measured: a local connect fails and a peer cannot reach it
+    either, while the same port proxied from loopback answers both. So moving the bind is the
+    WRONG repair for "the phone cannot reach this machine", and the old one-tap action did
+    exactly that, leaving the user unable to pair at all.
+
+    Carrying the existing bind with Serve is the right repair: it is how the dashboard is already
+    published, and it is what a Linux host typically has too (a VPS: 127.0.0.1:8642 <- serve
+    :8642 -> host.tailnet.ts.net). The handler goes on the api_server's OWN port so the URL the
+    phone receives needs no port translation, and so it cannot collide with the dashboard on 443.
+
+    Returns ``{"success", "url", "error", "already"}`` — never raises.
+    """
+    import subprocess
+
+    prof = profile_dir(owner or api_server_owner())
+    enabled, config_host, config_port = api_server_settings(prof)
+    if not enabled:
+        return {"success": False, "url": "", "already": False,
+                "error": "The API server is not enabled for that profile."}
+    host = (bind_host or config_host or "127.0.0.1").strip()
+    target_port = int(port or config_port)
+    want = join_host(host, target_port)
+
+    existing = tailnet_serve_url(want)
+    if existing:
+        return {"success": True, "url": existing, "already": True, "error": ""}
+
+    exe = shutil.which("tailscale")
+    if not exe:
+        return {"success": False, "url": "", "already": False,
+                "error": "Tailscale is not installed on this machine."}
+
+    target = f"http://{want}"
+    try:
+        out = subprocess.run(
+            [exe, "serve", "--bg", "--yes", f"--http={target_port}", target],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {"success": False, "url": "", "already": False,
+                "error": f"tailscale serve failed: {exc}"}
+    if out.returncode != 0:
+        detail = (out.stderr or out.stdout or "").strip().splitlines()
+        return {"success": False, "url": "", "already": False,
+                "error": detail[-1] if detail else "tailscale serve failed."}
+
+    url = tailnet_serve_url(want)
+    if not url:
+        # The command reported success but no handler points at us: say so rather than claim
+        # a URL the phone cannot use.
+        return {"success": False, "url": "", "already": False,
+                "error": "Serve ran, but no handler points at this API server yet."}
+    return {"success": True, "url": url, "already": False, "error": ""}
+
+
+def reach_from_anywhere(owner: str | None = None) -> tuple[bool, str, str]:
+    """Make these bots reachable off-network, preferring the repair that works.
+
+    Order matters, and the order used to be wrong. ``ensure_serve`` is tried first because it
+    leaves the bind alone and reaches the tailnet from it. Only a machine with no Tailscale CLI
+    at all falls back to rebinding onto the tailnet address, which is correct on a Linux host and
+    useless on macOS — so it is the fallback, never the first move.
+
+    Returns ``(ok, message, method)`` with method ``"serve"`` or ``"bind"``.
+    """
+    result = ensure_serve(owner=owner)
+    if result["success"]:
+        verb = "Already served" if result["already"] else "Now served"
+        return True, f"{verb} at {result['url']} — the bind did not change.", "serve"
+
+    exe = shutil.which("tailscale")
+    if exe:
+        # Serve failed for a reason other than "no CLI" (no tailnet, daemon down, a rejected
+        # command). Rebinding would not fix any of those, and on macOS it would break the
+        # pairing that works today.
+        return False, result["error"], "serve"
+
+    addr = tailnet_address()
+    if not addr:
+        return False, "No Tailscale address on this machine.", "bind"
+    ok, message = set_bind(addr, owner)
+    return ok, message, "bind"
+
+
 def join_host(raw_host: str, port: int) -> str:
     """Normalize anything the user typed into a base URL with a port."""
     value = (raw_host or "").strip().rstrip("/")
