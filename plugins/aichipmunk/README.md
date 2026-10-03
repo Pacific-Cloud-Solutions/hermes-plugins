@@ -57,11 +57,21 @@ The plugin pairs **the machine it runs on**: pairing reads that machine's own pr
 `API_SERVER_KEY` and its api_server bind. To pair a phone with a VPS or another host, install the
 plugin on *that* host — running it here pairs this machine's bots.
 
-On a server there is no Hermes Desktop window, so pair from the CLI; it prints the link and a
-scannable QR, and `--json` gives the machine-readable form:
+**In the app (easiest):** open the Bots page, choose **Connect to a host**, and enter that host's
+dashboard address (e.g. `https://your-vps.example.com`). The app signs in against the host and
+reads the live bot roster straight from this plugin's API — nothing has to be typed into the
+server's terminal. For that to work the host's dashboard must be published, so on a fresh install
+run it once there:
 
 ```bash
 hermes plugins install Pacific-Cloud-Solutions/hermes-plugins/plugins/aichipmunk --yes-deps
+hermes dashboard register      # lets the app reach the host and list its bots
+```
+
+**From the terminal (alternative):** the CLI on that host prints the pairing link and a scannable
+QR, which is what you need when the dashboard is not published:
+
+```bash
 hermes aichipmunk          # pairing link + QR code, in the terminal
 hermes aichipmunk --json   # machine-readable (the link is redacted to `link_present`)
 ```
@@ -69,9 +79,8 @@ hermes aichipmunk --json   # machine-readable (the link is redacted to `link_pre
 `--yes-deps` answers the `qrcode` dependency question up front, which is what a non-interactive
 install (SSH, CI, a container entrypoint) needs — without it the install can be refused.
 
-Everything after pairing behaves the same as on a desktop: the plugin's API
-(`/api/plugins/aichipmunk/`) is served by that host, so the phone reads the live bot roster from
-it, and the `tailscale serve` handler puts the API server on the tailnet.
+Either way the plugin's API (`/api/plugins/aichipmunk/`) is served by that host, and the
+`tailscale serve` handler puts the API server on the tailnet.
 
 The **Desktop page is an app-level surface**: Hermes Desktop loads it from
 `~/.hermes/desktop-plugins/` on the machine running the app — never from the host the window is
