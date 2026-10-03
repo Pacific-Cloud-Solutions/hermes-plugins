@@ -314,5 +314,197 @@ class Pair(unittest.TestCase):
         self.assertNotIn("dashboard", params)
 
 
+class ReviewFixes(unittest.TestCase):
+    """The defects the catalog review named, each pinned so it cannot come back."""
+
+    def test_a_poll_of_state_performs_no_side_effects(self):
+        """The status chip polls /state every 20s in EVERY open Desktop window.
+
+        This route used to publish the dashboard onto the tailnet with
+        `tailscale serve --bg` whenever public_url was unset — unasked, and again
+        on every poll. Every mutation this plugin can make goes through a
+        subprocess, so proving none runs is proving the route is read-only.
+        """
+        with (
+            mock.patch.object(pairing, "tailnet_address", return_value="100.101.102.103"),
+            mock.patch.object(pairing, "tailnet_peers", return_value=1),
+            mock.patch.object(pairing, "tailnet_serve_url", return_value=""),
+            mock.patch.object(pairing, "api_server_owner", return_value="default"),
+            mock.patch.object(pairing, "profile_dir", return_value=Path("/tmp")),
+            mock.patch.object(
+                pairing, "api_server_settings", return_value=(True, "192.168.40.111", 8642)
+            ),
+            mock.patch.object(
+                pairing, "candidate_addresses", return_value=["192.168.40.111"]
+            ),
+            mock.patch.object(pairing, "bots", return_value=[]),
+            mock.patch.object(pairing, "dashboard_public_url", return_value=""),
+            mock.patch.object(pairing.subprocess, "run") as run,
+        ):
+            out = plugin_api.state()
+
+        run.assert_not_called()
+        self.assertFalse(out["dashboard_ready"])
+
+    def test_state_no_longer_promises_a_dashboard_it_did_not_publish(self):
+        # The keys that carried the auto-serve outcome are gone with the call, so
+        # no caller can render an approval link for a publish that never happened.
+        with (
+            mock.patch.object(pairing, "tailnet_address", return_value="100.101.102.103"),
+            mock.patch.object(pairing, "tailnet_peers", return_value=1),
+            mock.patch.object(pairing, "tailnet_serve_url", return_value=""),
+            mock.patch.object(pairing, "api_server_owner", return_value="default"),
+            mock.patch.object(pairing, "profile_dir", return_value=Path("/tmp")),
+            mock.patch.object(
+                pairing, "api_server_settings", return_value=(True, "192.168.40.111", 8642)
+            ),
+            mock.patch.object(
+                pairing, "candidate_addresses", return_value=["192.168.40.111"]
+            ),
+            mock.patch.object(pairing, "bots", return_value=[]),
+        ):
+            out = plugin_api.state()
+
+        self.assertNotIn("dashboard_approval_url", out)
+        self.assertNotIn("dashboard_serve_error", out)
+
+    def test_pair_refuses_a_profile_name_that_is_not_a_profile(self):
+        """An unvalidated name used to reach the filesystem as a path fragment.
+
+        `../../x` resolved outside the profiles tree, so the payload read that
+        directory's `.env` and handed its `API_SERVER_KEY` back in the link. The
+        name is now checked against the profiles that exist, with no fallback.
+        """
+        with mock.patch.object(pairing, "profile_homes", return_value=[]):
+            with self.assertRaises(HTTPException) as caught:
+                plugin_api.pair(plugin_api.PairRequest(profile="../../x"))
+        self.assertEqual(caught.exception.status_code, 400)
+        self.assertIn("No Hermes profile named", caught.exception.detail)
+
+    def test_health_check_probes_only_addresses_this_plugin_offered(self):
+        # An open probe would make the backend fetch any URL's /health on demand
+        # — a request-forgery foothold. The page only re-probes what it was given.
+        with (
+            mock.patch.object(pairing, "api_server_owner", return_value="default"),
+            mock.patch.object(pairing, "profile_dir", return_value=Path("/tmp")),
+            mock.patch.object(
+                pairing, "api_server_settings", return_value=(True, "192.168.40.111", 8642)
+            ),
+            mock.patch.object(
+                pairing, "candidate_addresses", return_value=["192.168.40.111"]
+            ),
+            mock.patch.object(pairing, "tailnet_serve_url", return_value=""),
+        ):
+            with self.assertRaises(HTTPException) as caught:
+                plugin_api.health_check("http://169.254.169.254")
+            self.assertEqual(caught.exception.status_code, 400)
+
+            with mock.patch.object(pairing, "health", return_value=True) as probe:
+                offered = plugin_api.health_check("192.168.40.111")
+
+        self.assertEqual(offered, {"host": "192.168.40.111", "reachable": True})
+        probe.assert_called_once()
+
+    def test_pair_refuses_a_host_this_plugin_never_offered(self):
+        with mock.patch.object(pairing, "is_offered_host", return_value=False):
+            with self.assertRaises(HTTPException) as caught:
+                plugin_api.pair(
+                    plugin_api.PairRequest(profile="default", host="http://169.254.169.254")
+                )
+        self.assertEqual(caught.exception.status_code, 400)
+
+    def test_state_renders_on_a_machine_with_no_profiles(self):
+        """A host with nothing to pair must still load the UI.
+
+        api_server_owner() answers with a name when no profile enables the API
+        server — or when there are no profiles at all — and the polled route used
+        to resolve that name through the now-strict profile_dir, turning an empty
+        machine into a 500 that took the whole page down.
+        """
+        with (
+            mock.patch.object(pairing, "profile_homes", return_value=[]),
+            mock.patch.object(pairing, "tailnet_address", return_value=""),
+            mock.patch.object(pairing, "tailnet_peers", return_value=None),
+            mock.patch.object(pairing, "tailnet_serve_url", return_value=""),
+            mock.patch.object(pairing, "candidate_addresses", return_value=[]),
+            mock.patch.object(pairing, "bots", return_value=[]),
+            mock.patch.object(pairing, "dashboard_public_url", return_value=""),
+        ):
+            out = plugin_api.state()
+
+        self.assertEqual(out["hosts"], [])
+        self.assertFalse(out["can_reach_anywhere"])
+
+    def test_probing_an_offered_candidate_does_not_shell_out(self):
+        """The 'Try again' path must stay free.
+
+        Reading `tailscale serve status` costs the whole 3s timeout wherever the
+        CLI is a shim for a missing app bundle, so the allowlist consults the
+        cheap sources (interface candidates, the configured bind) before it
+        considers paying for the tailnet form at all.
+        """
+        with (
+            mock.patch.object(pairing, "owner_api_server_state", return_value=(True, "192.168.40.111", 8642)),
+            mock.patch.object(
+                pairing, "candidate_addresses", return_value=["192.168.40.111"]
+            ),
+            mock.patch.object(pairing, "tailnet_serve_url") as serve,
+            mock.patch.object(pairing, "health", return_value=True),
+        ):
+            out = plugin_api.health_check("192.168.40.111")
+
+        serve.assert_not_called()
+        self.assertEqual(out, {"host": "192.168.40.111", "reachable": True})
+
+
+class StateContract(unittest.TestCase):
+    """GET /state is a PUBLISHED contract — the mobile app parses it.
+
+    The app reads ``hosts`` and ``bots`` from this route (see aichipmunk_app
+    ``lib/services/hermes_bots_service.dart`` and ``hermes_host_client.dart``).
+    Any change to the set below is a decision about who reads a field, so it must
+    be made deliberately: a removed key is merely falsy in JS, but it throws in a
+    typed client that declares the field non-nullable. Change the expectation
+    here only after checking the consumers.
+    """
+
+    EXPECTED_KEYS = frozenset(
+        {
+            "hosts",
+            "bots",
+            "tailnet",
+            "tailnet_peers",
+            "tailnet_url",
+            "bind_verdict",
+            "owner",
+            "can_reach_anywhere",
+            "needs_bind_change",
+            "guidance",
+            "dashboard_public_url",
+            "dashboard_ready",
+        }
+    )
+
+    def test_state_key_set_matches_the_published_contract(self):
+        with (
+            mock.patch.object(pairing, "tailnet_address", return_value="100.101.102.103"),
+            mock.patch.object(pairing, "tailnet_peers", return_value=1),
+            mock.patch.object(pairing, "tailnet_serve_url", return_value=""),
+            mock.patch.object(pairing, "api_server_owner", return_value="default"),
+            mock.patch.object(pairing, "profile_dir", return_value=Path("/tmp")),
+            mock.patch.object(
+                pairing, "api_server_settings", return_value=(True, "192.168.40.111", 8642)
+            ),
+            mock.patch.object(
+                pairing, "candidate_addresses", return_value=["192.168.40.111"]
+            ),
+            mock.patch.object(pairing, "bots", return_value=[]),
+            mock.patch.object(pairing, "dashboard_public_url", return_value=""),
+        ):
+            out = plugin_api.state()
+
+        self.assertEqual(set(out), set(self.EXPECTED_KEYS))
+
+
 if __name__ == "__main__":
     unittest.main()

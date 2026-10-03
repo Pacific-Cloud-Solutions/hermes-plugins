@@ -160,11 +160,16 @@ function PairingCard({ result }) {
       jsxs('div', {
         className: 'flex items-start gap-4',
         children: [
-          jsx('img', {
-            src: result.qr,
-            alt: `Pairing code for ${result.label}`,
-            style: { width: '180px', height: '180px' }
-          }),
+          // The QR is the convenience; the link is the contract. A host without
+          // the optional `qrcode` extra returns an empty qr and a payload that
+          // still pairs, so this must not render a broken-image glyph.
+          result.qr
+            ? jsx('img', {
+                src: result.qr,
+                alt: `Pairing code for ${result.label}`,
+                style: { width: '180px', height: '180px' }
+              })
+            : null,
           jsxs('div', {
             className: 'min-w-0 flex-1',
             children: [
@@ -358,49 +363,15 @@ function AiChipmunkPage() {
                 ? jsxs('div', {
                     className: 'flex flex-col gap-2 text-xs text-(--ui-text-tertiary)',
                     children: [
-                      state.dashboard_approval_url
-                        ? jsxs('div', {
-                            className: 'flex flex-col gap-2',
-                            children: [
-                              'Tailscale must allow HTTPS on this tailnet before the app can list all your bots.',
-                              jsxs('div', {
-                                className: 'flex flex-wrap items-center gap-2',
-                                children: [
-                                  jsx(Button, {
-                                    onClick: () =>
-                                      void api.os.openExternal(state.dashboard_approval_url),
-                                    children: 'Open approval page'
-                                  }),
-                                  jsx(Button, {
-                                    onClick: async () => {
-                                      try {
-                                        await navigator.clipboard.writeText(
-                                          state.dashboard_approval_url
-                                        )
-                                        host.notify({
-                                          kind: 'success',
-                                          message: 'Link copied to clipboard.'
-                                        })
-                                      } catch {
-                                        host.notify({
-                                          kind: 'error',
-                                          message: 'Could not copy the link.'
-                                        })
-                                      }
-                                    },
-                                    children: 'Copy link'
-                                  })
-                                ]
-                              })
-                            ]
-                          })
-                        : jsxs('div', {
-                            children: [
-                              'This machine can reach the internet via Tailscale, but the dashboard is not published. Run ',
-                              jsx('code', { children: 'hermes dashboard register' }),
-                              ' in Terminal.'
-                            ]
-                          })
+                      // Publishing the dashboard is the user's own command, never this
+                      // plugin's: a polled GET must not change the machine (see /state).
+                      jsxs('div', {
+                        children: [
+                          'This machine can reach the internet via Tailscale, but the dashboard is not published. Run ',
+                          jsx('code', { children: 'hermes dashboard register' }),
+                          ' in Terminal.'
+                        ]
+                      })
                     ]
                   })
                 : null,
@@ -414,7 +385,9 @@ function AiChipmunkPage() {
                           children:
                             `Serves the '${state.owner}' API server onto your tailnet so the ` +
                             `phone can reach it from anywhere. The bind does not change and ` +
-                            `nothing restarts.`
+                            `nothing restarts. On a machine with no Tailscale at all it ` +
+                            `instead points the bind at your tailnet address and restarts ` +
+                            `that profile's gateway.`
                         }),
                         jsx(Button, {
                           onClick: () => void useTailscale(),

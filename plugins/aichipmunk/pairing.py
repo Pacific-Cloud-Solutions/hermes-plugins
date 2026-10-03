@@ -27,6 +27,7 @@ import re
 import shutil
 import socket
 import subprocess
+import sys
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -42,7 +43,19 @@ _PROFILE_IDENTITY_MARKERS = ("config.yaml", ".env", "SOUL.md", "profile.yaml", "
 
 
 def _hermes_root() -> Path:
-    return Path.home() / ".hermes"
+    """The home that CONTAINS the profiles — ``HERMES_HOME`` aware.
+
+    ``HERMES_HOME`` names the live home, and inside the gateway that is a PROFILE
+    home (``~/.hermes/profiles/<name>``): a profile is home + secret scope. Taking
+    that as the root would make ``profile_homes()`` enumerate exactly one profile
+    and call it ``default`` — the wrong-home bug this guards. So a home sitting
+    under a ``profiles/`` directory resolves to the root that owns it.
+    """
+    raw = os.environ.get("HERMES_HOME", "").strip()
+    home = Path(raw).expanduser() if raw else Path.home() / ".hermes"
+    if home.parent.name == "profiles":
+        return home.parent.parent
+    return home
 
 
 def profile_homes() -> list[tuple[str, Path]]:
@@ -68,12 +81,18 @@ def profile_homes() -> list[tuple[str, Path]]:
 
 
 def profile_dir(profile: str) -> Path:
+    """The named profile's home. Only a name that IS a profile resolves.
+
+    ``profile`` arrives from a request on the pairing path, so it must never be
+    joined onto a path. ``../../x`` or an absolute path used to resolve outside
+    the profiles tree and read whatever directory was there — handing that
+    directory's ``API_SERVER_KEY`` back in the pairing link. An unknown name is
+    an error, not a path guess.
+    """
     for name, home in profile_homes():
         if name == profile:
             return home
-    # Unknown name: answer with the conventional location so the caller's
-    # existence check produces the user-facing "no such profile" message.
-    return _hermes_root() / "profiles" / profile
+    raise ValueError(f"No Hermes profile named '{profile}'.")
 
 
 def profile_names() -> list[str]:
@@ -240,94 +259,6 @@ def dashboard_public_url() -> str:
     return ""
 
 
-def _dashboard_port() -> int | None:
-    """The port the Hermes dashboard is listening on, from the spawn ledger."""
-    ledger_path = _hermes_root() / "spawn-ledger.json"
-    if not ledger_path.exists():
-        return None
-    try:
-        ledger = json.loads(ledger_path.read_text())
-        if not isinstance(ledger, list):
-            return None
-        candidates = [
-            e for e in ledger
-            if isinstance(e, dict) and e.get("purpose") == "dashboard"
-        ]
-        if not candidates:
-            return None
-        candidates.sort(key=lambda e: e.get("registered_at", 0), reverse=True)
-        port = candidates[0].get("port")
-        if isinstance(port, int):
-            return port
-    except Exception:
-        pass
-    return None
-
-
-def attempt_dashboard_serve() -> dict:
-    """Try to publish the dashboard over Tailscale HTTPS.
-
-    Returns a dict with:
-    - success: bool
-    - approval_url: str (empty if not applicable)
-    - error: str (empty on success)
-    """
-    port = _dashboard_port()
-    if port is None:
-        return {
-            "success": False,
-            "approval_url": "",
-            "error": "Could not find the dashboard port.",
-        }
-
-    exe = shutil.which("tailscale")
-    if not exe:
-        return {
-            "success": False,
-            "approval_url": "",
-            "error": "Tailscale is not installed.",
-        }
-
-    target = f"http://127.0.0.1:{port}"
-    try:
-        out = subprocess.run(
-            [exe, "serve", "--bg", "--yes", "--https=443", target],
-            capture_output=True,
-            text=True,
-            # Short on purpose. This runs inside the state route, and the desktop app
-            # gives the WHOLE request 30 seconds. With a degraded Tailscale daemon this
-            # single call consumed that budget, so the plugin's UI rendered with no
-            # buttons and no error — a slow daemon looked like a broken plugin. Five
-            # seconds is enough for a healthy daemon (measured: 0.05s) and cheap enough
-            # to fail.
-            timeout=5,
-        )
-    except Exception as exc:
-        return {"success": False, "approval_url": "", "error": str(exc)}
-
-    combined = (out.stdout or "") + "\n" + (out.stderr or "")
-
-    if out.returncode == 0:
-        return {"success": True, "approval_url": "", "error": ""}
-
-    match = re.search(
-        r"https://login\.tailscale\.com/f/serve\?node=[^\s\"<>]+",
-        combined,
-    )
-    if match:
-        return {
-            "success": False,
-            "approval_url": match.group(0),
-            "error": combined.strip(),
-        }
-
-    return {
-        "success": False,
-        "approval_url": "",
-        "error": combined.strip() or "Tailscale refused to publish the dashboard.",
-    }
-
-
 def mask(key: str) -> str:
     """Last four characters only — enough to tell two keys apart, useless to a shoulder."""
     if len(key) <= 4:
@@ -395,8 +326,7 @@ def wifi_url() -> str:
     say), because offering a Wi-Fi button for an address nothing is listening on
     is the same trap as ranking an unreachable candidate.
     """
-    owner = api_server_owner()
-    _enabled, bind_host, port = api_server_settings(profile_dir(owner))
+    _enabled, bind_host, port = owner_api_server_state()
     if is_private_lan(bind_host):
         return join_host(bind_host, port)
     if bind_host in {"0.0.0.0", "::"}:
@@ -622,12 +552,68 @@ def api_server_owner() -> str:
 
     Restarting any other profile only bounces that profile inside the running
     host gateway: the PID does not change and the bind stays put.
+
+    When no profile enables it, name one that EXISTS rather than the literal
+    ``"default"``: callers resolve this through ``profile_dir``, which refuses
+    names that are not profiles, and ``default`` is only guaranteed to be one
+    while the root home carries the identity markers.
     """
     for name, home in profile_homes():
         enabled, _host, _port = api_server_settings(home)
         if enabled:
             return name
-    return "default"
+    names = profile_names()
+    return names[0] if names else "default"
+
+
+def owner_home() -> Path | None:
+    """The owner profile's home, or ``None`` when this machine has no profiles.
+
+    Unlike ``profile_dir``, nothing here comes off the wire — the owner is
+    derived from the profiles that exist — so a miss is a shrug rather than the
+    error a caller-supplied name earns. A host with no profiles must still
+    render an empty state instead of a failure.
+    """
+    try:
+        return profile_dir(api_server_owner())
+    except ValueError:
+        return None
+
+
+def owner_api_server_state() -> tuple[bool, str, int]:
+    """``(enabled, host, port)`` for the socket-owning profile, or the defaults."""
+    home = owner_home()
+    if home is None:
+        default_host, default_port = _api_server_defaults()
+        return False, default_host, default_port
+    return api_server_settings(home)
+
+
+def owner_api_server_settings() -> tuple[str, int]:
+    """``(host, port)`` for the socket-owning profile, or the defaults.
+
+    Machine-level bind facts, so a host with nothing to read answers with the
+    server's own defaults instead of raising at the caller.
+    """
+    home = owner_home()
+    if home is None:
+        return _api_server_defaults()
+    _enabled, host, port = api_server_settings(home)
+    return host, port
+
+
+def _hermes_cli() -> str:
+    """The ``hermes`` that belongs to THIS interpreter, not a stray PATH one.
+
+    A plugin runs inside the Hermes runtime, so the sibling entry point beside
+    ``sys.executable`` is the build the user actually installed. Resolving from
+    PATH can pick a different install and write config the running gateway never
+    reads; PATH stays only as a last resort.
+    """
+    sibling = Path(sys.executable).parent / "hermes"
+    if sibling.exists():
+        return str(sibling)
+    return shutil.which("hermes") or "hermes"
 
 
 def set_bind(addr: str, owner: str | None = None) -> tuple[bool, str]:
@@ -646,9 +632,10 @@ def set_bind(addr: str, owner: str | None = None) -> tuple[bool, str]:
     if not addr:
         return False, "No address to bind."
 
+    hermes = _hermes_cli()
     try:
         write = subprocess.run(
-            ["hermes", "-p", target, "config", "set", "platforms.api_server.host", addr],
+            [hermes, "-p", target, "config", "set", "platforms.api_server.host", addr],
             capture_output=True,
             text=True,
             timeout=90,
@@ -661,7 +648,7 @@ def set_bind(addr: str, owner: str | None = None) -> tuple[bool, str]:
 
     try:
         restart = subprocess.run(
-            ["hermes", "-p", target, "gateway", "restart"],
+            [hermes, "-p", target, "gateway", "restart"],
             capture_output=True,
             text=True,
             timeout=180,
@@ -693,8 +680,11 @@ def ensure_serve(bind_host: str = "", port: int = 0, owner: str | None = None) -
     """
     import subprocess
 
-    prof = profile_dir(owner or api_server_owner())
-    enabled, config_host, config_port = api_server_settings(prof)
+    home = profile_dir(owner) if owner else owner_home()
+    if home is None:
+        return {"success": False, "url": "", "already": False,
+                "error": "No Hermes profile on this machine."}
+    enabled, config_host, config_port = api_server_settings(home)
     if not enabled:
         return {"success": False, "url": "", "already": False,
                 "error": "The API server is not enabled for that profile."}
@@ -779,6 +769,31 @@ def join_host(raw_host: str, port: int) -> str:
     return value
 
 
+def is_offered_host(host: str) -> bool:
+    """Whether ``host`` is an address this plugin offered, bare or as a URL.
+
+    The probe endpoints take a host from the request. Without this they would
+    fetch an arbitrary URL's ``/health`` on demand — a request-forgery foothold
+    with no purpose, since the page only ever re-probes what it was handed.
+
+    Ordered cheapest-first on purpose: candidates come from an interface read and
+    the bind from config, neither of which shells out, while only the tailnet form
+    needs ``tailscale serve status`` — which costs the full 3s timeout wherever
+    the CLI is a shim. The page normally re-probes a candidate, so the common
+    path stays free.
+    """
+    value = (host or "").strip().rstrip("/")
+    if not value:
+        return False
+    _enabled, config_host, port = owner_api_server_state()
+    cheap = {join_host(address, port) for address in candidate_addresses()}
+    cheap.add(join_host(config_host, port))
+    if value in cheap or join_host(value, port) in cheap:
+        return True
+    serve = tailnet_serve_url(join_host(config_host, port))
+    return bool(serve) and (value == serve or join_host(value, port) == serve)
+
+
 # --------------------------------------------------------------------------- #
 # link + QR
 # --------------------------------------------------------------------------- #
@@ -801,9 +816,19 @@ def qr_png_data_uri(link: str) -> str:
 
     Uses the same library the rest of Hermes uses for QR codes, at 10px per
     module so it is large enough to scan off a screen.
+
+    ``qrcode`` is an optional Hermes extra, never core, so an install without it
+    must still get a usable payload: the LINK is the contract, the QR is the
+    convenience. Returning empty here — rather than raising — is what keeps
+    ``/pair`` from turning a missing optional into a 500 that hands the user
+    nothing to pair with. The CLI path already guarded this; this is the same
+    guard on the HTTP path.
     """
-    import qrcode
-    from qrcode.constants import ERROR_CORRECT_M
+    try:
+        import qrcode
+        from qrcode.constants import ERROR_CORRECT_M
+    except ImportError:
+        return ""
 
     qr = qrcode.QRCode(version=None, error_correction=ERROR_CORRECT_M, box_size=10, border=4)
     qr.add_data(link)
@@ -880,9 +905,14 @@ def bots() -> list[dict]:
 
 
 def _bind_target() -> tuple[str, int]:
-    """The address the api_server is actually bound to, and its port."""
-    owner = api_server_owner()
-    _enabled, host, port = api_server_settings(profile_dir(owner))
+    """The address the api_server is actually bound to, and its port.
+
+    Tolerant by design — see ``owner_api_server_state``: a host with no profiles
+    answers with the server's own defaults rather than failing its callers. This
+    is reachable from the polled state route through ``bots()``, where a failure
+    would take the whole plugin UI down.
+    """
+    _enabled, host, port = owner_api_server_state()
     return host, port
 
 
@@ -927,9 +957,7 @@ def pairing_payload(profile: str, host: str | None = None) -> dict:
     # DEFAULT_HOST (127.0.0.1) and the payload called the machine "unreachable"
     # while the tailnet listener was answering. Bind facts come from the profile
     # that OWNS the socket.
-    _owner_enabled, config_host, port = api_server_settings(
-        profile_dir(api_server_owner())
-    )
+    _owner_enabled, config_host, port = owner_api_server_state()
 
     candidates = candidate_addresses()
     tailnet = tailnet_address()

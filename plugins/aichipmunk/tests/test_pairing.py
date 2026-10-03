@@ -11,6 +11,7 @@ import contextlib
 import importlib.util
 import json
 import shutil
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -565,12 +566,17 @@ class SetBind(unittest.TestCase):
             ok, message = pairing.set_bind("100.101.102.103", "default")
 
         self.assertTrue(ok, message)
-        self.assertEqual(calls[0][:4], ["hermes", "-p", "default", "config"])
+        # argv[0] is the CLI belonging to THIS interpreter (an absolute path), not
+        # a bare name off PATH — see _hermes_cli(). The contract under test is the
+        # arguments, so assert those and only sanity-check the binary.
+        self.assertTrue(calls[0][0].endswith("hermes"), calls[0])
+        self.assertEqual(calls[0][1:4], ["-p", "default", "config"])
         self.assertIn("platforms.api_server.host", calls[0])
         self.assertIn("100.101.102.103", calls[0])
         # A secondary profile only bounces ITSELF inside the running host
         # gateway: same PID, bind unchanged. Name the owner.
-        self.assertEqual(calls[1][:3], ["hermes", "-p", "default"])
+        self.assertTrue(calls[1][0].endswith("hermes"), calls[1])
+        self.assertEqual(calls[1][1:3], ["-p", "default"])
         self.assertIn("restart", calls[1])
 
     def test_a_failed_write_stops_before_restarting(self):
@@ -840,6 +846,67 @@ class HealthViaHost(unittest.TestCase):
     def test_returns_false_on_network_failure(self):
         with mock.patch("urllib.request.urlopen", side_effect=OSError("boom")):
             self.assertFalse(pairing.health_via_host("http://100.81.171.122:8642", "atlas.tail9cf0ce.ts.net:8642"))
+
+
+class ReviewFixes(unittest.TestCase):
+    """Behaviour the catalog review required, pinned at the pairing layer."""
+
+    def test_profile_dir_refuses_a_name_that_is_not_a_profile(self):
+        # The name comes off the wire. It must never be joined onto a path —
+        # these are the shapes that used to reach another directory's .env and
+        # return its API_SERVER_KEY in the pairing link.
+        for bad in ("../../x", "/etc", "..", "a/b", "profiles/../.."):
+            with self.subTest(bad=bad):
+                with self.assertRaises(ValueError) as caught:
+                    pairing.profile_dir(bad)
+                self.assertIn("No Hermes profile named", str(caught.exception))
+
+    def test_every_real_profile_still_resolves_to_its_own_home(self):
+        # The guard must not cost the feature: profiles that DO exist still
+        # resolve, so the refusal above is a filter and not a wall.
+        names = pairing.profile_names()
+        if not names:
+            self.skipTest("no Hermes profiles on this machine to check")
+        for name in names:
+            with self.subTest(profile=name):
+                self.assertTrue(pairing.profile_dir(name).is_dir())
+
+    def test_qr_renders_when_the_optional_extra_is_present(self):
+        uri = pairing.qr_png_data_uri("aichipmunk://pair?v=1&profile=default")
+        self.assertTrue(uri.startswith("data:image/png;base64,"), uri[:40])
+
+    def test_qr_degrades_to_empty_without_the_optional_extra(self):
+        # `qrcode` ships only in some Hermes extras, never in core. Raising here
+        # turned /pair into a 500 and left the user nothing to pair with — the CLI
+        # path already guarded it, and now the HTTP path does too.
+        with mock.patch.dict(sys.modules, {"qrcode": None, "qrcode.constants": None}):
+            self.assertEqual(pairing.qr_png_data_uri("aichipmunk://pair?v=1"), "")
+
+    def test_hermes_cli_prefers_the_running_interpreters_sibling(self):
+        # A stray PATH entry can point at a different install than the one this
+        # plugin runs inside, and the config write then lands where the running
+        # gateway never reads it.
+        with tempfile.TemporaryDirectory() as tmp:
+            bindir = Path(tmp) / "bin"
+            bindir.mkdir()
+            (bindir / "hermes").write_text("#!/bin/sh\n")
+            with (
+                mock.patch.object(pairing.sys, "executable", str(bindir / "python")),
+                mock.patch.object(
+                    pairing.shutil, "which", return_value="/usr/local/bin/hermes"
+                ),
+            ):
+                self.assertEqual(pairing._hermes_cli(), str(bindir / "hermes"))
+
+    def test_hermes_cli_falls_back_to_path_when_there_is_no_sibling(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with (
+                mock.patch.object(pairing.sys, "executable", str(Path(tmp) / "python")),
+                mock.patch.object(
+                    pairing.shutil, "which", return_value="/usr/local/bin/hermes"
+                ),
+            ):
+                self.assertEqual(pairing._hermes_cli(), "/usr/local/bin/hermes")
 
 
 if __name__ == "__main__":

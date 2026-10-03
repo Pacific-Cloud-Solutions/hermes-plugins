@@ -55,9 +55,29 @@ hermes aichipmunk -p default --json   # machine-readable (never includes the QR 
 
 The plugin pairs **the machine it runs on**: pairing reads that machine's own profiles, its
 `API_SERVER_KEY` and its api_server bind. To pair a phone with a VPS or another host, install the
-plugin on that host — running it here pairs this machine's bots. If your desktop app is connected
-to that host, the plugin's page and its API come from that host's backend, so the page appears
-exactly where you would expect it.
+plugin on *that* host — running it here pairs this machine's bots.
+
+On a server there is no Hermes Desktop window, so pair from the CLI; it prints the link and a
+scannable QR, and `--json` gives the machine-readable form:
+
+```bash
+hermes plugins install Pacific-Cloud-Solutions/hermes-plugins/plugins/aichipmunk --yes-deps
+hermes aichipmunk          # pairing link + QR code, in the terminal
+hermes aichipmunk --json   # machine-readable (the link is redacted to `link_present`)
+```
+
+`--yes-deps` answers the `qrcode` dependency question up front, which is what a non-interactive
+install (SSH, CI, a container entrypoint) needs — without it the install can be refused.
+
+Everything after pairing behaves the same as on a desktop: the plugin's API
+(`/api/plugins/aichipmunk/`) is served by that host, so the phone reads the live bot roster from
+it, and the `tailscale serve` handler puts the API server on the tailnet.
+
+The **Desktop page is an app-level surface**: Hermes Desktop loads it from
+`~/.hermes/desktop-plugins/` on the machine running the app — never from the host the window is
+connected to. So installing this plugin on a remote host does not add its page to your local
+Desktop app; that host is what the CLI is for. If you do want the page locally, **Capabilities →
+Plugins** offers **Install here** for the desktop half.
 
 ## Security posture
 
@@ -65,7 +85,10 @@ exactly where you would expect it.
   never stored, cached, or logged by this plugin.
 - Only the last four characters are ever shown (`…4f2a`).
 - The desktop page is served over the app's existing authenticated gateway; the
-  plugin adds no new network listener.
+  plugin opens **no listener of its own**. When you switch a bot to Tailscale it
+  does add a persistent `tailscale serve` handler carrying that API server's port
+  onto your tailnet — that is a real change to this machine's Tailscale config.
+  `tailscale serve status` shows it and `tailscale serve reset` removes it.
 - The rendered code is a credential while it is on screen. Treat a screenshot of
   it like the key itself.
 

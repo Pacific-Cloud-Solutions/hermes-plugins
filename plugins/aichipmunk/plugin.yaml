@@ -2,3 +2,9 @@ name: aichipmunk
 version: 0.1.0
 description: "Connect this machine's Hermes bots to the AI Chipmunk mobile app. Renders the pairing code inside Hermes Desktop so no terminal is required."
 author: "Jason Cornell (Pacific Cloud Solutions)"
+license: MIT
+python_dependencies:
+  # qrcode ships only in some Hermes extras, never in core. Declaring it asks for
+  # consent at install; the code still degrades to a link-only payload when it is
+  # absent, because a declined or missing optional extra must not break pairing.
+  - "qrcode>=7.4,<8"

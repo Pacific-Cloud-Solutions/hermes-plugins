@@ -48,20 +48,24 @@ def state() -> dict:
     tailnet = pairing.tailnet_address()
     peers = pairing.tailnet_peers()
     owner = pairing.api_server_owner()
-    _enabled, config_host, port = pairing.api_server_settings(
-        pairing.profile_dir(owner)
-    )
+    # Tolerant on purpose. The owner is derived from the profiles on disk, never
+    # from a request, and a host with no profiles at all must render an empty
+    # state instead of failing the poll. Only a REQUEST-supplied name is held to
+    # profile_dir's strict rule — see pairable_profile.
+    config_host, port = pairing.owner_api_server_settings()
     verdict = pairing.bind_verdict(config_host)
     # One bind, two networks: Serve carries the same port onto the tailnet under
     # a stable name, so this machine needs no bind change at all.
     serve_url = pairing.tailnet_serve_url(pairing.join_host(config_host, port))
     dash_url = pairing.dashboard_public_url()
     can_anywhere = bool(serve_url) or (bool(tailnet) and verdict == "anywhere")
-    serve_attempt: dict = {}
-    if not dash_url and can_anywhere:
-        serve_attempt = pairing.attempt_dashboard_serve()
-        if serve_attempt.get("success"):
-            dash_url = pairing.dashboard_public_url()
+    # A polled GET must have NO side effects. This route used to call
+    # attempt_dashboard_serve() here whenever public_url was unset, so the Desktop
+    # status chip — which polls this every 20s in every open window — published the
+    # Hermes dashboard onto the tailnet with `tailscale serve --bg` unasked, and
+    # kept re-running it on every poll because nothing set public_url afterwards.
+    # Publishing the dashboard is a user's explicit call: the page offers the
+    # `hermes dashboard register` instruction instead.
     return {
         "hosts": pairing.candidate_addresses(),
         "bots": pairing.bots(),
@@ -82,8 +86,6 @@ def state() -> dict:
         "guidance": pairing.guidance(verdict, tailnet, peers, serve_url),
         "dashboard_public_url": dash_url,
         "dashboard_ready": bool(dash_url),
-        "dashboard_approval_url": serve_attempt.get("approval_url", ""),
-        "dashboard_serve_error": serve_attempt.get("error", ""),
     }
 
 
@@ -142,9 +144,7 @@ def use_tailscale(req: UseTailscaleRequest) -> dict:
     if not ok:
         raise HTTPException(status_code=500, detail=message)
 
-    _enabled, config_host, port = pairing.api_server_settings(
-        pairing.profile_dir(owner)
-    )
+    _enabled, config_host, port = pairing.owner_api_server_state()
 
     if method == "serve":
         # Nothing restarted and nothing moved, so there is no listener to wait for. The
@@ -186,6 +186,13 @@ def use_tailscale(req: UseTailscaleRequest) -> dict:
 
 @router.post("/pair")
 def pair(req: PairRequest) -> dict:
+    # A supplied host must be one we offered: building the payload probes it, so
+    # an open host would let a caller aim that probe wherever it liked.
+    if (req.host or "").strip() and not pairing.is_offered_host(req.host):
+        raise HTTPException(
+            status_code=400,
+            detail="That address was not offered by this plugin.",
+        )
     try:
         return pairing.pairing_payload(req.profile, req.host)
     except ValueError as exc:
@@ -195,7 +202,17 @@ def pair(req: PairRequest) -> dict:
 
 @router.get("/health-check")
 def health_check(host: str) -> dict:
-    """Re-probe one address, so the page can offer a 'Try again' action."""
+    """Re-probe one address, so the page can offer a 'Try again' action.
+
+    Only an address this plugin itself offered is probeable. An open probe makes
+    the backend fetch any URL's ``/health``, which is a request-forgery foothold
+    for no benefit — the page only ever re-probes what it was already handed.
+    """
+    if not pairing.is_offered_host(host):
+        raise HTTPException(
+            status_code=400,
+            detail="That address was not offered by this plugin.",
+        )
     return {"host": host, "reachable": pairing.health(host)}
 
 
